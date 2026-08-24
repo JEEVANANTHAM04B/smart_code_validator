@@ -288,6 +288,17 @@ export async function runValidationEngine(input: ValidationInputPayload): Promis
 }
 
 
+/** Canonical form for raw output string normalization: normalized newlines, trimmed lines. */
+function canonicalOutput(value: string): string {
+  if (!value) return "";
+  return value
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/\s+$/, ""))
+    .join("\n")
+    .trim();
+}
+
 /** Parses output string into clean grid rows & cells while stripping decorative table separator lines. */
 function parseTableGrid(text: string): string[][] {
   const cleanText = text.trim();
@@ -322,48 +333,53 @@ function parseTableGrid(text: string): string[][] {
 }
 
 function compareOutputs(actual: string, expected: string): boolean {
-  const normActual = canonicalOutput(actual);
-  const normExpected = canonicalOutput(expected);
+  try {
+    const normActual = canonicalOutput(actual);
+    const normExpected = canonicalOutput(expected);
 
-  if (normActual === normExpected) return true;
+    if (normActual === normExpected) return true;
 
-  const cleanActual = normActual.toLowerCase().replace(/\s+/g, " ");
-  const cleanExpected = normExpected.toLowerCase().replace(/\s+/g, " ");
-  if (cleanActual === cleanExpected) return true;
+    const cleanActual = normActual.toLowerCase().replace(/\s+/g, " ");
+    const cleanExpected = normExpected.toLowerCase().replace(/\s+/g, " ");
+    if (cleanActual === cleanExpected) return true;
 
-  // Grid-based structural data comparison ignoring table formatting/separators
-  const gridActual = parseTableGrid(normActual);
-  const gridExpected = parseTableGrid(normExpected);
+    // Grid-based structural data comparison ignoring table formatting/separators
+    const gridActual = parseTableGrid(normActual);
+    const gridExpected = parseTableGrid(normExpected);
 
-  if (gridActual.length === 0 || gridExpected.length === 0) return false;
+    if (gridActual.length === 0 || gridExpected.length === 0) return false;
 
-  // Check row count match
-  if (gridActual.length !== gridExpected.length) return false;
+    // Check row count match
+    if (gridActual.length !== gridExpected.length) return false;
 
-  for (let r = 0; r < gridActual.length; r++) {
-    const rowA = gridActual[r]!;
-    const rowE = gridExpected[r]!;
+    for (let r = 0; r < gridActual.length; r++) {
+      const rowA = gridActual[r]!;
+      const rowE = gridExpected[r]!;
 
-    if (rowA.length !== rowE.length) return false;
+      if (rowA.length !== rowE.length) return false;
 
-    for (let c = 0; c < rowA.length; c++) {
-      const valA = rowA[c]!;
-      const valE = rowE[c]!;
+      for (let c = 0; c < rowA.length; c++) {
+        const valA = rowA[c]!;
+        const valE = rowE[c]!;
 
-      if (valA === valE) continue;
-      if (valA.toLowerCase() === valE.toLowerCase()) continue;
+        if (valA === valE) continue;
+        if (valA.toLowerCase() === valE.toLowerCase()) continue;
 
-      const numA = Number(valA);
-      const numE = Number(valE);
-      if (valA.trim() !== "" && valE.trim() !== "" && !isNaN(numA) && !isNaN(numE)) {
-        if (numA === numE) continue;
+        const numA = Number(valA);
+        const numE = Number(valE);
+        if (valA.trim() !== "" && valE.trim() !== "" && !isNaN(numA) && !isNaN(numE)) {
+          if (numA === numE) continue;
+        }
+
+        return false;
       }
-
-      return false;
     }
-  }
 
-  return true;
+    return true;
+  } catch (err) {
+    console.error("Unable to compare SQL outputs:", err);
+    return false;
+  }
 }
 
 function estimateComplexity(code: string, language: Language) {
@@ -575,10 +591,16 @@ function applyAcceptanceRules(
   } else if (!expectedRaw) {
     reason = "No expected output was provided, so an exact match could not be verified.";
   } else {
-    matched = compareOutputs(actual, expectedRaw);
-    reason = matched
-      ? "Actual output matches the expected output exactly."
-      : "Actual output differs from the expected output.";
+    try {
+      matched = compareOutputs(actual, expectedRaw);
+      reason = matched
+        ? "Actual output matches the expected output exactly."
+        : "Actual output differs from the expected output.";
+    } catch (err) {
+      console.error("Unable to compare SQL outputs:", err);
+      matched = false;
+      reason = "Unable to compare SQL outputs.";
+    }
   }
 
   const verdict = executionStatus === "success" && matched ? "accepted" : "rejected";
