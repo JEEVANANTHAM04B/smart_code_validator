@@ -144,7 +144,8 @@ function isValidSqlSyntax(code: string): boolean {
   return true;
 }
 
-function prepareDatabaseContext(db: any, question?: string, code?: string, expectedOutput?: string) {
+function prepareDatabaseContext(db: any, question?: string, code?: string, expectedOutput: string = "") {
+  const expOutput = typeof expectedOutput === "string" ? expectedOutput : "";
   // 1. Explicit SQL statements in question (CREATE TABLE, INSERT INTO, etc.)
   if (question?.trim()) {
     const sqlBlocksMatches = question.match(/(?:CREATE|INSERT|ALTER|DROP)\s+[^;]+;/gi);
@@ -275,7 +276,7 @@ function prepareDatabaseContext(db: any, question?: string, code?: string, expec
 
     const rawCols = [
       ...((code.match(/\bselect\s+([\s\S]+?)\bfrom\b/i)?.[1] || "").match(/\b[a-zA-Z0-9_]+\b/g) || []),
-      ...((expectedOutput || "").match(/\b[a-zA-Z0-9_]+\b/g) || []),
+      ...(expOutput.match(/\b[a-zA-Z0-9_]+\b/g) || []),
       "Department", "department", "Salary", "salary", "Name", "name", "ID", "id"
     ];
     const columnsToEnsure = Array.from(new Set(rawCols)).filter(
