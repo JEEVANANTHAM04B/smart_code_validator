@@ -144,7 +144,7 @@ function isValidSqlSyntax(code: string): boolean {
   return true;
 }
 
-function prepareDatabaseContext(db: any, question?: string, code?: string) {
+function prepareDatabaseContext(db: any, question?: string, code?: string, expectedOutput?: string) {
   // 1. Explicit SQL statements in question (CREATE TABLE, INSERT INTO, etc.)
   if (question?.trim()) {
     const sqlBlocksMatches = question.match(/(?:CREATE|INSERT|ALTER|DROP)\s+[^;]+;/gi);
@@ -334,7 +334,7 @@ async function runSql(code: string, question?: string, expectedOutput?: string):
     const SQL = await initSqlJs({ locateFile: (file: string) => `${SQLJS_WASM}${file}` });
     const db = new SQL.Database();
     try {
-      prepareDatabaseContext(db, question, code);
+      prepareDatabaseContext(db, question, code, expectedOutput);
       const results = db.exec(code);
       const output = results
         .map((result) => formatSqlTable(result.columns, result.values as unknown[][], expectedOutput))
