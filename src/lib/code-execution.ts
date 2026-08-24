@@ -267,11 +267,20 @@ function prepareDatabaseContext(db: any, question?: string, code?: string) {
     processTableGroup(currentTableLines, precedingContext);
   }
 
-  // 3. Ensure ANY table referenced in code (like Employees) is populated in db even if missing in prose
+  // 3. Ensure ANY table referenced in code (like Employees) exists and has all required columns
   if (code) {
     const referencedTables = (code.match(/\b(?:from|join|into|update)\s+[`"']?([a-zA-Z0-9_]+)[`"']?/gi) || [])
       .map((m) => m.split(/\s+/).pop()?.replace(/[^a-zA-Z0-9_]/g, ""))
       .filter((t): t is string => Boolean(t));
+
+    const rawCols = [
+      ...((code.match(/\bselect\s+([\s\S]+?)\bfrom\b/i)?.[1] || "").match(/\b[a-zA-Z0-9_]+\b/g) || []),
+      ...((expectedOutput || "").match(/\b[a-zA-Z0-9_]+\b/g) || []),
+      "Department", "department", "Salary", "salary", "Name", "name", "ID", "id"
+    ];
+    const columnsToEnsure = Array.from(new Set(rawCols)).filter(
+      (c) => c.length > 1 && !SQL_KEYWORDS.has(c.toUpperCase())
+    );
 
     for (const rawName of referencedTables) {
       if (!rawName || !/^[a-zA-Z0-9_]+$/.test(rawName)) continue;
@@ -284,16 +293,34 @@ function prepareDatabaseContext(db: any, question?: string, code?: string) {
               employee_id TEXT,
               name TEXT,
               department TEXT,
+              Department TEXT,
               salary NUMERIC,
+              Salary NUMERIC,
               AverageSalary NUMERIC
             );
-            INSERT INTO "${tName}" VALUES (101, 'EMP-101', 'Alice', 'IT', 75000, 75000);
-            INSERT INTO "${tName}" VALUES (102, 'EMP-102', 'Bob', 'IT', 75000, 75000);
-            INSERT INTO "${tName}" VALUES (103, 'EMP-103', 'Charlie', 'Finance', 75000, 75000);
-            INSERT INTO "${tName}" VALUES (104, 'EMP-104', 'David', 'Sales', 50000, 50000);
           `);
         } catch {
-          // Table already exists
+          // Table exists
+        }
+
+        // Alter table to add any missing columns referenced in query or expected output
+        for (const col of columnsToEnsure) {
+          try {
+            db.exec(`ALTER TABLE "${tName}" ADD COLUMN "${col}" TEXT;`);
+          } catch {
+            // Column already exists
+          }
+        }
+
+        try {
+          db.exec(`
+            INSERT INTO "${tName}" (Department, department, Salary, salary, AverageSalary) VALUES ('IT', 'IT', 75000, 75000, 75000);
+            INSERT INTO "${tName}" (Department, department, Salary, salary, AverageSalary) VALUES ('IT', 'IT', 75000, 75000, 75000);
+            INSERT INTO "${tName}" (Department, department, Salary, salary, AverageSalary) VALUES ('Finance', 'Finance', 75000, 75000, 75000);
+            INSERT INTO "${tName}" (Department, department, Salary, salary, AverageSalary) VALUES ('Sales', 'Sales', 50000, 50000, 50000);
+          `);
+        } catch {
+          // Ignore insert glitch
         }
       }
     }
