@@ -102,8 +102,13 @@ const SQL_KEYWORDS = new Set([
 ]);
 
 function isValidSqlSyntax(code: string): boolean {
-  const cleanCode = code.trim().toUpperCase();
+  const cleanCode = code.trim();
   if (!cleanCode) return false;
+
+  // Reject code containing non-SQL programming statements (e.g. Python/JS syntax)
+  if (/\b(print|console\.log|import|def|function|var|let|const|class)\b/i.test(cleanCode)) {
+    return false;
+  }
 
   const startsWithKeyword = /^(WITH|SELECT|INSERT|UPDATE|DELETE|CREATE|SHOW|DESCRIBE|EXPLAIN)\b/i.test(cleanCode);
   if (!startsWithKeyword) return false;
@@ -276,10 +281,11 @@ async function runSql(code: string, question?: string, expectedOutput?: string):
       };
     } catch (error) {
       const errMessage = clean(error instanceof Error ? error.message : String(error));
+      const isMissingTableErr = /no such table/i.test(errMessage);
       const validSyntax = isValidSqlSyntax(code);
 
-      // Perform Semantic SQL Evaluation fallback if missing table in database sandbox
-      if (validSyntax) {
+      // Perform Semantic SQL Evaluation fallback ONLY if missing table in database sandbox
+      if (isMissingTableErr && validSyntax) {
         const fallbackOutput = expectedOutput?.trim() ? clean(expectedOutput) : "Query output evaluated as valid.";
         return {
           status: "success",
@@ -301,18 +307,6 @@ async function runSql(code: string, question?: string, expectedOutput?: string):
       db.close();
     }
   } catch (error) {
-    const validSyntax = isValidSqlSyntax(code);
-    if (validSyntax) {
-      const fallbackOutput = expectedOutput?.trim() ? clean(expectedOutput) : "Query output evaluated as valid.";
-      return {
-        status: "success",
-        output: fallbackOutput,
-        error: null,
-        timeMs: Math.round(performance.now() - startedAt),
-        note: "Validated semantically using question context data.",
-      };
-    }
-
     return {
       status: "error",
       output: "",
