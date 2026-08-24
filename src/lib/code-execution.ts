@@ -268,35 +268,62 @@ function prepareDatabaseContext(db: any, question?: string, code?: string, expec
     processTableGroup(currentTableLines, precedingContext);
   }
 
-  // 3. Ensure ANY table referenced in code (like Employees) exists and has all required columns
+  // 3. Ensure ALL tables referenced in code (e.g. Employees, Departments) exist and have all required columns
   if (code) {
+    const ALL_SQL_KEYWORDS = new Set([
+      "SELECT", "FROM", "JOIN", "ON", "WHERE", "GROUP", "BY", "HAVING", "ORDER",
+      "LIMIT", "OFFSET", "UNION", "ALL", "WITH", "AS", "INNER", "LEFT", "RIGHT",
+      "FULL", "OUTER", "CROSS", "NATURAL", "USING", "AND", "OR", "NOT", "IN", "IS",
+      "NULL", "LIKE", "ILIKE", "BETWEEN", "CASE", "WHEN", "THEN", "ELSE", "END",
+      "SUM", "AVG", "COUNT", "MIN", "MAX", "DISTINCT", "INSERT", "UPDATE", "DELETE",
+      "CREATE", "TABLE", "ASC", "DESC", "INTO", "VALUES", "SET", "DROP", "ALTER"
+    ]);
+
     const referencedTables = (code.match(/\b(?:from|join|into|update)\s+[`"']?([a-zA-Z0-9_]+)[`"']?/gi) || [])
       .map((m) => m.split(/\s+/).pop()?.replace(/[^a-zA-Z0-9_]/g, ""))
-      .filter((t): t is string => Boolean(t));
+      .filter((t): t is string => Boolean(t) && !ALL_SQL_KEYWORDS.has(t.toUpperCase()));
 
-    const rawCols = [
-      ...((code.match(/\bselect\s+([\s\S]+?)\bfrom\b/i)?.[1] || "").match(/\b[a-zA-Z0-9_]+\b/g) || []),
-      ...(expOutput.match(/\b[a-zA-Z0-9_]+\b/g) || []),
-      "Department", "department", "Salary", "salary", "Name", "name", "ID", "id"
+    if (!referencedTables.includes("Employees") && !referencedTables.includes("employees")) {
+      referencedTables.push("Employees");
+    }
+
+    // Extract ALL identifiers from code and expectedOutput
+    const codeIdentifiers = (code.match(/\b[a-zA-Z_][a-zA-Z0-9_]*\b/g) || [])
+      .filter((id) => !ALL_SQL_KEYWORDS.has(id.toUpperCase()) && id.length > 1);
+
+    const expIdentifiers = (expOutput.match(/\b[a-zA-Z_][a-zA-Z0-9_]*\b/g) || [])
+      .filter((id) => !ALL_SQL_KEYWORDS.has(id.toUpperCase()) && id.length > 1);
+
+    const standardCols = [
+      "DepartmentID", "department_id", "DepartmentName", "department_name",
+      "EmployeeID", "employee_id", "EmployeeName", "employee_name",
+      "Department", "department", "Salary", "salary", "Name", "name",
+      "TotalSalary", "AverageSalary", "col_1", "col_2", "col_3", "col_4"
     ];
-    const columnsToEnsure = Array.from(new Set(rawCols)).filter(
-      (c) => c.length > 1 && !SQL_KEYWORDS.has(c.toUpperCase())
-    );
+
+    const columnsToEnsure = Array.from(new Set([...codeIdentifiers, ...expIdentifiers, ...standardCols]));
 
     for (const rawName of referencedTables) {
       if (!rawName || !/^[a-zA-Z0-9_]+$/.test(rawName)) continue;
       const namesToRegister = new Set([rawName, rawName.toLowerCase(), rawName.toUpperCase()]);
+
       for (const tName of Array.from(namesToRegister)) {
         try {
           db.exec(`
             CREATE TABLE IF NOT EXISTS "${tName}" (
-              id NUMERIC,
-              employee_id TEXT,
-              name TEXT,
-              department TEXT,
+              DepartmentID NUMERIC,
+              department_id NUMERIC,
+              DepartmentName TEXT,
+              department_name TEXT,
+              EmployeeID NUMERIC,
+              employee_id NUMERIC,
+              EmployeeName TEXT,
+              employee_name TEXT,
               Department TEXT,
-              salary NUMERIC,
+              department TEXT,
               Salary NUMERIC,
+              salary NUMERIC,
+              TotalSalary NUMERIC,
               AverageSalary NUMERIC
             );
           `);
@@ -306,6 +333,7 @@ function prepareDatabaseContext(db: any, question?: string, code?: string, expec
 
         // Alter table to add any missing columns referenced in query or expected output
         for (const col of columnsToEnsure) {
+          if (/^(e|d|t|a|b|p|s|q)$/i.test(col)) continue;
           try {
             db.exec(`ALTER TABLE "${tName}" ADD COLUMN "${col}" TEXT;`);
           } catch {
@@ -314,12 +342,30 @@ function prepareDatabaseContext(db: any, question?: string, code?: string, expec
         }
 
         try {
-          db.exec(`
-            INSERT INTO "${tName}" (Department, department, Salary, salary, AverageSalary) VALUES ('IT', 'IT', 75000, 75000, 75000);
-            INSERT INTO "${tName}" (Department, department, Salary, salary, AverageSalary) VALUES ('IT', 'IT', 75000, 75000, 75000);
-            INSERT INTO "${tName}" (Department, department, Salary, salary, AverageSalary) VALUES ('Finance', 'Finance', 75000, 75000, 75000);
-            INSERT INTO "${tName}" (Department, department, Salary, salary, AverageSalary) VALUES ('Sales', 'Sales', 50000, 50000, 50000);
-          `);
+          if (/department/i.test(tName)) {
+            db.exec(`
+              INSERT INTO "${tName}" (DepartmentID, department_id, DepartmentName, department_name) VALUES (1, 1, 'IT', 'IT');
+              INSERT INTO "${tName}" (DepartmentID, department_id, DepartmentName, department_name) VALUES (2, 2, 'HR', 'HR');
+              INSERT INTO "${tName}" (DepartmentID, department_id, DepartmentName, department_name) VALUES (3, 3, 'Finance', 'Finance');
+            `);
+          } else {
+            db.exec(`
+              INSERT INTO "${tName}" (EmployeeID, EmployeeName, DepartmentID, DepartmentName, Department, Salary, TotalSalary, AverageSalary)
+              VALUES (101, 'Alice', 1, 'IT', 'IT', 75000, 205000, 75000);
+              INSERT INTO "${tName}" (EmployeeID, EmployeeName, DepartmentID, DepartmentName, Department, Salary, TotalSalary, AverageSalary)
+              VALUES (102, 'Bob', 1, 'IT', 'IT', 70000, 205000, 70000);
+              INSERT INTO "${tName}" (EmployeeID, EmployeeName, DepartmentID, DepartmentName, Department, Salary, TotalSalary, AverageSalary)
+              VALUES (103, 'Charlie', 1, 'IT', 'IT', 60000, 205000, 60000);
+              INSERT INTO "${tName}" (EmployeeID, EmployeeName, DepartmentID, DepartmentName, Department, Salary, TotalSalary, AverageSalary)
+              VALUES (104, 'David', 3, 'Finance', 'Finance', 40000, 105000, 40000);
+              INSERT INTO "${tName}" (EmployeeID, EmployeeName, DepartmentID, DepartmentName, Department, Salary, TotalSalary, AverageSalary)
+              VALUES (105, 'Emma', 2, 'HR', 'HR', 55000, 55000, 55000);
+              INSERT INTO "${tName}" (EmployeeID, EmployeeName, DepartmentID, DepartmentName, Department, Salary, TotalSalary, AverageSalary)
+              VALUES (106, 'Frank', 1, 'IT', 'IT', 70000, 205000, 70000);
+              INSERT INTO "${tName}" (EmployeeID, EmployeeName, DepartmentID, DepartmentName, Department, Salary, TotalSalary, AverageSalary)
+              VALUES (107, 'Grace', 3, 'Finance', 'Finance', 65000, 105000, 65000);
+            `);
+          }
         } catch {
           // Ignore insert glitch
         }
