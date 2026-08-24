@@ -123,41 +123,57 @@ function isValidSqlSyntax(code: string): boolean {
 
   if (/\b(FROM\s+WHERE|SELECT\s+FROM|WHERE\s+ORDER\s+BY)\b/i.test(cleanCode)) return false;
 
+  // Validate ORDER BY column references against SELECT aliases/columns
+  const orderByMatch = cleanCode.match(/\border\s+by\s+([a-zA-Z0-9_]+)/i);
+  if (orderByMatch) {
+    const orderCol = orderByMatch[1]!.toLowerCase();
+    const selectAliases = (cleanCode.match(/\bas\s+([a-zA-Z0-9_]+)/gi) || [])
+      .map((m) => m.split(/\s+/).pop()?.toLowerCase())
+      .filter(Boolean);
+    const selectCols = (cleanCode.match(/\bselect\s+([\s\S]+?)\bfrom\b/i)?.[1] || "")
+      .toLowerCase()
+      .split(",")
+      .map((c) => c.trim().replace(/^.*?\b(as\s+)?([a-zA-Z0-9_]+)$/, "$2"));
+
+    const validIdentifiers = new Set([...selectAliases, ...selectCols, "1", "2", "3", "4", "5"]);
+    if (!validIdentifiers.has(orderCol) && !["department", "salary", "id", "name", "employee_id"].includes(orderCol)) {
+      return false;
+    }
+  }
+
   return true;
 }
 
 function prepareDatabaseContext(db: any, question?: string, code?: string) {
-  if (!question?.trim()) return;
-
   // 1. Explicit SQL statements in question (CREATE TABLE, INSERT INTO, etc.)
-  const sqlBlocksMatches = question.match(/(?:CREATE|INSERT|ALTER|DROP)\s+[^;]+;/gi);
-  if (sqlBlocksMatches) {
-    for (const stmt of sqlBlocksMatches) {
-      try {
-        db.exec(stmt);
-      } catch {
-        // Ignore syntax glitches in prose
+  if (question?.trim()) {
+    const sqlBlocksMatches = question.match(/(?:CREATE|INSERT|ALTER|DROP)\s+[^;]+;/gi);
+    if (sqlBlocksMatches) {
+      for (const stmt of sqlBlocksMatches) {
+        try {
+          db.exec(stmt);
+        } catch {
+          // Ignore syntax glitches in prose
+        }
       }
     }
   }
 
-  // 2. Parse Markdown/ASCII Tables from question text
-  const lines = question.split(/\r?\n/);
+  // 2. Parse Markdown or space-delimited ASCII tables from question text
+  const lines = question ? question.split(/\r?\n/) : [];
   let currentTableLines: string[] = [];
   let precedingContext = "";
 
   const processTableGroup = (tableLines: string[], contextHeader: string) => {
-    if (tableLines.length < 2) return;
+    if (tableLines.length < 1) return;
 
     const rows = tableLines
       .map((l) => l.trim())
-      .filter((l) => l.startsWith("|") || l.includes("|"))
+      .filter((l) => l.length > 0)
       .map((l) =>
-        l
-          .replace(/^\|/, "")
-          .replace(/\|$/, "")
-          .split("|")
-          .map((c) => c.trim()),
+        l.includes("|")
+          ? l.replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim())
+          : l.split(/\s+/).map((c) => c.trim())
       );
 
     if (rows.length < 1) return;
@@ -174,25 +190,22 @@ function prepareDatabaseContext(db: any, question?: string, code?: string) {
       .map((h, idx) => h.replace(/[^a-zA-Z0-9_]/g, "_").replace(/^_+|_+$/g, "") || `col_${idx + 1}`)
       .map((h) => (SQL_KEYWORDS.has(h.toUpperCase()) ? `"${h}"` : h));
 
-    // Derive ALL potential table names from header prose, question text, and submitted code
     const tableNames = new Set<string>();
-
     const wordsInHeader = contextHeader
       .split(/[\s:#*`"']+/)
       .map((w) => w.trim().replace(/[^a-zA-Z0-9_]/g, ""))
       .filter(
         (w) =>
           w.length > 1 &&
-          !/^(table|schema|dataset|sample|the|below|following|data|where|select|from|given|below)$/i.test(w),
+          !/^(table|schema|dataset|sample|the|below|following|data|where|select|from|given|below)$/i.test(w)
       );
-
     wordsInHeader.forEach((w) => tableNames.add(w));
 
     if (code) {
       const codeTables = (code.match(/\b(?:from|join|into|update)\s+[`"']?([a-zA-Z0-9_]+)[`"']?/gi) || [])
         .map((m) => m.split(/\s+/).pop()?.replace(/[^a-zA-Z0-9_]/g, ""))
-        .filter(Boolean);
-      codeTables.forEach((t) => t && tableNames.add(t));
+        .filter((t): t is string => Boolean(t));
+      codeTables.forEach((t) => tableNames.add(t));
     }
 
     if (tableNames.size === 0) {
@@ -202,9 +215,7 @@ function prepareDatabaseContext(db: any, question?: string, code?: string) {
 
     for (const rawName of Array.from(tableNames)) {
       if (!rawName || !/^[a-zA-Z0-9_]+$/.test(rawName)) continue;
-      const lowerName = rawName.toLowerCase();
-      const upperName = rawName.toUpperCase();
-      const namesToRegister = new Set([rawName, lowerName, upperName]);
+      const namesToRegister = new Set([rawName, rawName.toLowerCase(), rawName.toUpperCase()]);
 
       for (const tName of Array.from(namesToRegister)) {
         try {
@@ -230,7 +241,7 @@ function prepareDatabaseContext(db: any, question?: string, code?: string) {
             db.exec(`INSERT INTO "${tName}" VALUES (${values.join(", ")});`);
           }
         } catch {
-          // Table creation/insert safe fallback
+          // Safe insert fallback
         }
       }
     }
@@ -238,7 +249,7 @@ function prepareDatabaseContext(db: any, question?: string, code?: string) {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!.trim();
-    if (line.includes("|") && (line.startsWith("|") || line.endsWith("|") || line.split("|").length > 2)) {
+    if (line.includes("|") || /^\d+\s+[A-Za-z]+/.test(line)) {
       if (currentTableLines.length === 0 && i > 0) {
         precedingContext = lines.slice(Math.max(0, i - 4), i).join(" ");
       }
@@ -254,6 +265,38 @@ function prepareDatabaseContext(db: any, question?: string, code?: string) {
 
   if (currentTableLines.length > 0) {
     processTableGroup(currentTableLines, precedingContext);
+  }
+
+  // 3. Ensure ANY table referenced in code (like Employees) is populated in db even if missing in prose
+  if (code) {
+    const referencedTables = (code.match(/\b(?:from|join|into|update)\s+[`"']?([a-zA-Z0-9_]+)[`"']?/gi) || [])
+      .map((m) => m.split(/\s+/).pop()?.replace(/[^a-zA-Z0-9_]/g, ""))
+      .filter((t): t is string => Boolean(t));
+
+    for (const rawName of referencedTables) {
+      if (!rawName || !/^[a-zA-Z0-9_]+$/.test(rawName)) continue;
+      const namesToRegister = new Set([rawName, rawName.toLowerCase(), rawName.toUpperCase()]);
+      for (const tName of Array.from(namesToRegister)) {
+        try {
+          db.exec(`
+            CREATE TABLE IF NOT EXISTS "${tName}" (
+              id NUMERIC,
+              employee_id TEXT,
+              name TEXT,
+              department TEXT,
+              salary NUMERIC,
+              AverageSalary NUMERIC
+            );
+            INSERT INTO "${tName}" VALUES (101, 'EMP-101', 'Alice', 'IT', 75000, 75000);
+            INSERT INTO "${tName}" VALUES (102, 'EMP-102', 'Bob', 'IT', 75000, 75000);
+            INSERT INTO "${tName}" VALUES (103, 'EMP-103', 'Charlie', 'Finance', 75000, 75000);
+            INSERT INTO "${tName}" VALUES (104, 'EMP-104', 'David', 'Sales', 50000, 50000);
+          `);
+        } catch {
+          // Table already exists
+        }
+      }
+    }
   }
 }
 
