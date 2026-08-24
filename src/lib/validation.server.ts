@@ -288,14 +288,37 @@ export async function runValidationEngine(input: ValidationInputPayload): Promis
 }
 
 
-/** Canonical form for exact-output comparison: normalized newlines, no trailing spaces, trimmed. */
-function canonicalOutput(value: string) {
-  return value
-    .replace(/\r\n?/g, "\n")
-    .split("\n")
-    .map((line) => line.replace(/\s+$/, ""))
-    .join("\n")
-    .trim();
+/** Parses output string into clean grid rows & cells while stripping decorative table separator lines. */
+function parseTableGrid(text: string): string[][] {
+  const cleanText = text.trim();
+  if (!cleanText) return [];
+
+  const lines = cleanText.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+  const rows: string[][] = [];
+
+  for (const line of lines) {
+    // Detect and ignore table separator rows (e.g. "--------------------------", "---+---", "=====")
+    // A line is a separator if it contains NO alphanumeric characters and consists only of dashes, equals, colons, pipes, or spaces.
+    const isSeparatorRow = !/[a-zA-Z0-9]/.test(line) && /^[-=:\s|]+$/.test(line);
+    if (isSeparatorRow) continue;
+
+    let cells: string[];
+    if (line.includes("|")) {
+      cells = line
+        .replace(/^\|/, "")
+        .replace(/\|$/, "")
+        .split("|")
+        .map((c) => c.trim());
+    } else {
+      cells = line.split(/\s+/).map((c) => c.trim());
+    }
+
+    if (cells.length > 0 && cells.some((c) => c !== "")) {
+      rows.push(cells);
+    }
+  }
+
+  return rows;
 }
 
 function compareOutputs(actual: string, expected: string): boolean {
@@ -308,18 +331,39 @@ function compareOutputs(actual: string, expected: string): boolean {
   const cleanExpected = normExpected.toLowerCase().replace(/\s+/g, " ");
   if (cleanActual === cleanExpected) return true;
 
-  // If actual has SQL table formatting (contains '---' divider line), check if rows match
-  if (normActual.includes("---")) {
-    const lines = normActual.split("\n");
-    const dividerIdx = lines.findIndex((l) => /^[-:\s]+$/.test(l.trim()));
-    if (dividerIdx !== -1) {
-      const dataRows = lines.slice(dividerIdx + 1).join("\n").trim();
-      if (canonicalOutput(dataRows) === normExpected) return true;
-      if (canonicalOutput(dataRows).toLowerCase().replace(/\s+/g, " ") === cleanExpected) return true;
+  // Grid-based structural data comparison ignoring table formatting/separators
+  const gridActual = parseTableGrid(normActual);
+  const gridExpected = parseTableGrid(normExpected);
+
+  if (gridActual.length === 0 || gridExpected.length === 0) return false;
+
+  // Check row count match
+  if (gridActual.length !== gridExpected.length) return false;
+
+  for (let r = 0; r < gridActual.length; r++) {
+    const rowA = gridActual[r]!;
+    const rowE = gridExpected[r]!;
+
+    if (rowA.length !== rowE.length) return false;
+
+    for (let c = 0; c < rowA.length; c++) {
+      const valA = rowA[c]!;
+      const valE = rowE[c]!;
+
+      if (valA === valE) continue;
+      if (valA.toLowerCase() === valE.toLowerCase()) continue;
+
+      const numA = Number(valA);
+      const numE = Number(valE);
+      if (valA.trim() !== "" && valE.trim() !== "" && !isNaN(numA) && !isNaN(numE)) {
+        if (numA === numE) continue;
+      }
+
+      return false;
     }
   }
 
-  return false;
+  return true;
 }
 
 function estimateComplexity(code: string, language: Language) {
