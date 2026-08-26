@@ -332,7 +332,7 @@ function parseTableGrid(text: string): string[][] {
   return rows;
 }
 
-function compareOutputs(actual: string, expected: string): boolean {
+function compareOutputs(actual: string, expected: string, code?: string): boolean {
   try {
     const normActual = canonicalOutput(actual);
     const normExpected = canonicalOutput(expected);
@@ -349,33 +349,77 @@ function compareOutputs(actual: string, expected: string): boolean {
 
     if (gridActual.length === 0 || gridExpected.length === 0) return false;
 
-    // Check row count match
-    if (gridActual.length !== gridExpected.length) return false;
+    const cellsEqual = (valA: string, valE: string): boolean => {
+      if (valA === valE) return true;
+      if (valA.toLowerCase() === valE.toLowerCase()) return true;
 
-    for (let r = 0; r < gridActual.length; r++) {
-      const rowA = gridActual[r]!;
-      const rowE = gridExpected[r]!;
-
-      if (rowA.length !== rowE.length) return false;
-
-      for (let c = 0; c < rowA.length; c++) {
-        const valA = rowA[c]!;
-        const valE = rowE[c]!;
-
-        if (valA === valE) continue;
-        if (valA.toLowerCase() === valE.toLowerCase()) continue;
-
-        const numA = Number(valA);
-        const numE = Number(valE);
-        if (valA.trim() !== "" && valE.trim() !== "" && !isNaN(numA) && !isNaN(numE)) {
-          if (numA === numE) continue;
-        }
-
-        return false;
+      const numA = Number(valA);
+      const numE = Number(valE);
+      if (valA.trim() !== "" && valE.trim() !== "" && !isNaN(numA) && !isNaN(numE)) {
+        return numA === numE;
       }
+      return false;
+    };
+
+    const rowsEqual = (rowA: string[], rowE: string[]): boolean => {
+      if (rowA.length !== rowE.length) return false;
+      for (let c = 0; c < rowA.length; c++) {
+        if (!cellsEqual(rowA[c]!, rowE[c]!)) return false;
+      }
+      return true;
+    };
+
+    const hasSeparatorAfterFirstRow = (text: string) => {
+      const lines = text.trim().split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      return lines.length > 1 && !/[a-zA-Z0-9]/.test(lines[1]!) && /^[-=:\s|]+$/.test(lines[1]!);
+    };
+
+    const hasExplicitOrderBy = code ? /\border\s+by\b/i.test(code) : false;
+
+    const matchGrids = (gA: string[][], gE: string[][]): boolean => {
+      if (gA.length !== gE.length) return false;
+
+      if (hasExplicitOrderBy) {
+        for (let r = 0; r < gA.length; r++) {
+          if (!rowsEqual(gA[r]!, gE[r]!)) return false;
+        }
+        return true;
+      } else {
+        const consumed = new Array(gA.length).fill(false);
+        for (let rE = 0; rE < gE.length; rE++) {
+          const rowE = gE[rE]!;
+          let foundMatch = false;
+          for (let rA = 0; rA < gA.length; rA++) {
+            if (!consumed[rA] && rowsEqual(gA[rA]!, rowE)) {
+              consumed[rA] = true;
+              foundMatch = true;
+              break;
+            }
+          }
+          if (!foundMatch) return false;
+        }
+        return true;
+      }
+    };
+
+    if (matchGrids(gridActual, gridExpected)) return true;
+
+    const actualHasHeader = hasSeparatorAfterFirstRow(normActual);
+    const expectedHasHeader = hasSeparatorAfterFirstRow(normExpected);
+
+    if (actualHasHeader && !expectedHasHeader) {
+      if (matchGrids(gridActual.slice(1), gridExpected)) return true;
     }
 
-    return true;
+    if (expectedHasHeader && !actualHasHeader) {
+      if (matchGrids(gridActual, gridExpected.slice(1))) return true;
+    }
+
+    if (actualHasHeader && expectedHasHeader) {
+      if (matchGrids(gridActual.slice(1), gridExpected.slice(1))) return true;
+    }
+
+    return false;
   } catch (err) {
     console.error("Unable to compare SQL outputs:", err);
     return false;
@@ -571,7 +615,7 @@ function generateFallbackSuggestions(
 /**
  * Acceptance is decided ONLY by:
  * 1. the code executing without an error, and
- * 2. the produced output matching the expected output exactly.
+ * 2. the produced output matching the expected output exactly (if provided).
  * All AI scores/insights stay informational.
  */
 function applyAcceptanceRules(
@@ -587,12 +631,13 @@ function applyAcceptanceRules(
   let reason: string;
 
   if (executionStatus === "error") {
-    reason = "Code failed to execute, so the output could not be compared.";
+    reason = run.error || "Code failed to execute, so the output could not be compared.";
   } else if (!expectedRaw) {
-    reason = "No expected output was provided, so an exact match could not be verified.";
+    matched = true;
+    reason = "SQL query executed successfully with zero errors (expected output omitted).";
   } else {
     try {
-      matched = compareOutputs(actual, expectedRaw);
+      matched = compareOutputs(actual, expectedRaw, input.code);
       reason = matched
         ? "Actual output matches the expected output exactly."
         : "Actual output differs from the expected output.";

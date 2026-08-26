@@ -145,7 +145,8 @@ function isValidSqlSyntax(code: string): boolean {
 }
 
 function prepareDatabaseContext(db: any, question?: string, code?: string, expectedOutput: string = "") {
-  const expOutput = typeof expectedOutput === "string" ? expectedOutput : "";
+  const createdTables = new Set<string>();
+
   // 1. Explicit SQL statements in question (CREATE TABLE, INSERT INTO, etc.)
   if (question?.trim()) {
     const sqlBlocksMatches = question.match(/(?:CREATE|INSERT|ALTER|DROP)\s+[^;]+;/gi);
@@ -153,6 +154,10 @@ function prepareDatabaseContext(db: any, question?: string, code?: string, expec
       for (const stmt of sqlBlocksMatches) {
         try {
           db.exec(stmt);
+          const tblMatch = stmt.match(/(?:CREATE\s+TABLE|INSERT\s+INTO)\s+[`"']?([a-zA-Z0-9_]+)[`"']?/i);
+          if (tblMatch?.[1]) {
+            createdTables.add(tblMatch[1].toLowerCase());
+          }
         } catch {
           // Ignore syntax glitches in prose
         }
@@ -168,91 +173,235 @@ function prepareDatabaseContext(db: any, question?: string, code?: string, expec
   const processTableGroup = (tableLines: string[], contextHeader: string) => {
     if (tableLines.length < 1) return;
 
-    const rows = tableLines
+    const validLines = tableLines
       .map((l) => l.trim())
-      .filter((l) => l.length > 0)
-      .map((l) =>
-        l.includes("|")
-          ? l.replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim())
-          : l.split(/\s+/).map((c) => c.trim())
+      .filter((l) => l.length > 0 && !(!/[a-zA-Z0-9]/.test(l) && /^[-=:\s|]+$/.test(l)));
+
+    if (validLines.length === 0) return;
+
+    const parsedRows = validLines.map((l) =>
+      l.includes("|")
+        ? l
+            .replace(/^\|/, "")
+            .replace(/\|$/, "")
+            .split("|")
+            .map((c) => c.trim())
+        : l.split(/\s+/).map((c) => c.trim())
+    );
+
+    if (parsedRows.length === 0) return;
+
+    const firstRow = parsedRows[0]!;
+
+    // Check if firstRow is a data row or a header row.
+    // If any cell in firstRow is numeric (e.g. "101", "1", "75000"), it's a DATA ROW.
+    const isFirstRowData = firstRow.some((cell) => cell.trim() !== "" && !isNaN(Number(cell.trim())));
+
+    let headers: string[] = [];
+    let dataRows: string[][] = [];
+
+    if (isFirstRowData) {
+      dataRows = parsedRows;
+    } else {
+      headers = firstRow.map((h, idx) =>
+        h.replace(/[^a-zA-Z0-9_]/g, "_").replace(/^_+|_+$/g, "") || `col_${idx + 1}`
       );
+      dataRows = parsedRows.slice(1);
+    }
 
-    if (rows.length < 1) return;
+    // Determine target table name dynamically
+    let targetTableName = "";
 
-    const rawHeaders = rows[0];
-    if (!rawHeaders || rawHeaders.length === 0) return;
-
-    const dataRows = rows.slice(1).filter((r) => {
-      const lineStr = r.join("");
-      return !/^[-:\s|]+$/.test(lineStr) && r.some((c) => c !== "");
-    });
-
-    const headers = rawHeaders
-      .map((h, idx) => h.replace(/[^a-zA-Z0-9_]/g, "_").replace(/^_+|_+$/g, "") || `col_${idx + 1}`)
-      .map((h) => (SQL_KEYWORDS.has(h.toUpperCase()) ? `"${h}"` : h));
-
-    const tableNames = new Set<string>();
-    const wordsInHeader = contextHeader
-      .split(/[\s:#*`"']+/)
+    const candidateWords = contextHeader
+      .split(/[\s:#*`"':=]+/)
       .map((w) => w.trim().replace(/[^a-zA-Z0-9_]/g, ""))
       .filter(
         (w) =>
           w.length > 1 &&
-          !/^(table|schema|dataset|sample|the|below|following|data|where|select|from|given|below)$/i.test(w)
+          !/^(table|schema|dataset|sample|the|below|following|data|where|select|from|given|below|rows|row|and|with|in|for|of|a|an|is|are|count)$/i.test(w)
       );
-    wordsInHeader.forEach((w) => tableNames.add(w));
 
-    if (code) {
+    const uncreatedCandidate = candidateWords.slice().reverse().find((w) => !createdTables.has(w.toLowerCase()));
+    if (uncreatedCandidate) {
+      targetTableName = uncreatedCandidate;
+    } else if (candidateWords.length > 0) {
+      targetTableName = candidateWords[candidateWords.length - 1]!;
+    }
+
+    if (!targetTableName && code) {
       const codeTables = (code.match(/\b(?:from|join|into|update)\s+[`"']?([a-zA-Z0-9_]+)[`"']?/gi) || [])
         .map((m) => m.split(/\s+/).pop()?.replace(/[^a-zA-Z0-9_]/g, ""))
         .filter((t): t is string => Boolean(t));
-      codeTables.forEach((t) => tableNames.add(t));
+      const uncreated = codeTables.find((t) => !createdTables.has(t.toLowerCase()));
+      if (uncreated) targetTableName = uncreated;
     }
 
-    if (tableNames.size === 0) {
-      tableNames.add("Employees");
-      tableNames.add("employees");
+    if (!targetTableName) {
+      targetTableName = `Table_${createdTables.size + 1}`;
     }
 
-    for (const rawName of Array.from(tableNames)) {
-      if (!rawName || !/^[a-zA-Z0-9_]+$/.test(rawName)) continue;
-      const namesToRegister = new Set([rawName, rawName.toLowerCase(), rawName.toUpperCase()]);
+    if (/^employees$/i.test(targetTableName)) targetTableName = "Employees";
+    if (/^departments$/i.test(targetTableName)) targetTableName = "Departments";
 
-      for (const tName of Array.from(namesToRegister)) {
-        try {
-          const colDefs = headers
-            .map((h, colIdx) => {
-              const sampleVals = dataRows.map((r) => r[colIdx]).filter(Boolean);
-              const isNumeric = sampleVals.length > 0 && sampleVals.every((v) => v !== undefined && !isNaN(Number(v)));
-              const colName = h.startsWith('"') ? h : `"${h}"`;
-              return `${colName} ${isNumeric ? "NUMERIC" : "TEXT"}`;
-            })
-            .join(", ");
+    if (headers.length === 0) {
+      const colCount = parsedRows[0]?.length || 1;
+      headers = Array.from({ length: colCount }, (_, idx) => `col_${idx + 1}`);
+    }
 
-          db.exec(`CREATE TABLE IF NOT EXISTS "${tName}" (${colDefs});`);
+    const cleanedHeaders = headers.map((h) =>
+      h.replace(/[^a-zA-Z0-9_]/g, "_").replace(/^_+|_+$/g, "") || "col"
+    );
 
-          for (const row of dataRows) {
-            const values = headers.map((_, i) => {
-              const val = row[i] ?? "";
-              if (val.trim() !== "" && !isNaN(Number(val))) {
-                return Number(val);
-              }
-              return `'${val.replace(/'/g, "''")}'`;
-            });
-            db.exec(`INSERT INTO "${tName}" VALUES (${values.join(", ")});`);
+    if (createdTables.has(targetTableName.toLowerCase())) return;
+
+    const columnsToCreate: { name: string; type: string; colIdx: number }[] = [];
+    const existingNames = new Set<string>();
+
+    const addCol = (colName: string, colType: string, idx: number) => {
+      const cleanName = colName.replace(/[^a-zA-Z0-9_]/g, "_").replace(/^_+|_+$/g, "");
+      if (!cleanName) return;
+      if (!existingNames.has(cleanName.toLowerCase())) {
+        columnsToCreate.push({ name: cleanName, type: colType, colIdx: idx });
+        existingNames.add(cleanName.toLowerCase());
+      }
+    };
+
+    cleanedHeaders.forEach((h, colIdx) => {
+      const sampleVals = dataRows.map((r) => r[colIdx]).filter(Boolean);
+      const isNumeric = sampleVals.length > 0 && sampleVals.every((v) => v !== undefined && !isNaN(Number(v)));
+      const colType = isNumeric ? "NUMERIC" : "TEXT";
+
+      addCol(h, colType, colIdx);
+
+      const snake = h.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
+      addCol(snake, colType, colIdx);
+    });
+
+    if (isFirstRowData && code) {
+      const SQL_KEYWORDS = new Set([
+        "SELECT", "FROM", "JOIN", "ON", "WHERE", "GROUP", "BY", "HAVING", "ORDER",
+        "LIMIT", "OFFSET", "UNION", "ALL", "WITH", "AS", "INNER", "LEFT", "RIGHT",
+        "FULL", "OUTER", "CROSS", "NATURAL", "USING", "AND", "OR", "NOT", "IN", "IS",
+        "NULL", "LIKE", "ILIKE", "BETWEEN", "CASE", "WHEN", "THEN", "ELSE", "END",
+        "SUM", "AVG", "COUNT", "MIN", "MAX", "DISTINCT", "ASC", "DESC", "OVER", "PARTITION"
+      ]);
+
+      const targetLower = targetTableName.toLowerCase().replace(/s$/, "");
+
+      const codeIdentifiers = Array.from(
+        new Set(
+          (code.match(/\b[a-zA-Z_][a-zA-Z0-9_]*\b/g) || []).filter(
+            (id) => !SQL_KEYWORDS.has(id.toUpperCase()) && id.toLowerCase() !== targetTableName.toLowerCase()
+          )
+        )
+      ).sort((a, b) => {
+        const aLower = a.toLowerCase();
+        const bLower = b.toLowerCase();
+        const aIsExact = aLower === `${targetTableName.toLowerCase()}id` || aLower === `${targetLower}id`;
+        const bIsExact = bLower === `${targetTableName.toLowerCase()}id` || bLower === `${targetLower}id`;
+        if (aIsExact && !bIsExact) return -1;
+        if (!aIsExact && bIsExact) return 1;
+        return 0;
+      });
+
+      const cellCount = dataRows[0]?.length || 0;
+      const assignedCellForId = new Map<number, boolean>();
+
+      for (const id of codeIdentifiers) {
+        if (existingNames.has(id.toLowerCase())) continue;
+        const lowerId = id.toLowerCase();
+
+        let targetColIdx = -1;
+        if (/id$/i.test(lowerId)) {
+          if (cellCount === 2) {
+            if (lowerId === "id") {
+              targetColIdx = 0;
+            } else if (!assignedCellForId.has(0)) {
+              targetColIdx = 0;
+              assignedCellForId.set(0, true);
+            } else if (!assignedCellForId.has(1)) {
+              targetColIdx = 1;
+              assignedCellForId.set(1, true);
+            } else {
+              targetColIdx = 0;
+            }
+          } else if (cellCount === 3) {
+            if (lowerId === `${targetTableName.toLowerCase()}id` || lowerId === `${targetLower}id` || lowerId === "id" || !assignedCellForId.has(0)) {
+              targetColIdx = 0;
+              assignedCellForId.set(0, true);
+            } else {
+              targetColIdx = 1;
+              assignedCellForId.set(1, true);
+            }
+          } else {
+            targetColIdx = 0;
           }
-        } catch {
-          // Safe insert fallback
+        } else if (/(name|title|author|user|customer|employee)/i.test(lowerId) && cellCount > 1) {
+          targetColIdx = 1;
+        } else if (/(major|department|dept|category|type)/i.test(lowerId) && cellCount > 2) {
+          targetColIdx = 2;
+        } else if (/(gpa|score|grade|credits|price|salary|amount|balance|total)/i.test(lowerId) && cellCount >= 3) {
+          targetColIdx = cellCount - 1;
+        } else if (cellCount === 2) {
+          if (/name|title|dept|department/i.test(lowerId)) targetColIdx = 1;
+          else targetColIdx = 0;
+        }
+
+        if (targetColIdx !== -1 && targetColIdx < cellCount) {
+          const sampleVals = dataRows.map((r) => r[targetColIdx]).filter(Boolean);
+          const isNumeric = sampleVals.length > 0 && sampleVals.every((v) => v !== undefined && !isNaN(Number(v)));
+          addCol(id, isNumeric ? "NUMERIC" : "TEXT", targetColIdx);
         }
       }
     }
+
+    const createColsSql = columnsToCreate.map((c) => `"${c.name}" ${c.type}`).join(", ");
+    try {
+      db.exec(`CREATE TABLE IF NOT EXISTS "${targetTableName}" (${createColsSql});`);
+    } catch {
+      // Table creation fallback
+    }
+
+    for (const row of dataRows) {
+      const insertVals: (string | number | null)[] = [];
+      const insertCols: string[] = [];
+
+      columnsToCreate.forEach((c) => {
+        const colIdx = c.colIdx;
+        insertCols.push(`"${c.name}"`);
+        if (colIdx !== -1 && row[colIdx] !== undefined && row[colIdx] !== null) {
+          const raw = row[colIdx]!.trim();
+          if (raw === "" || raw.toUpperCase() === "NULL") {
+            insertVals.push(null);
+          } else if (!isNaN(Number(raw))) {
+            insertVals.push(Number(raw));
+          } else {
+            insertVals.push(raw);
+          }
+        } else {
+          insertVals.push(null);
+        }
+      });
+
+      const placeholders = insertCols.map(() => "?").join(", ");
+      try {
+        db.run(`INSERT INTO "${targetTableName}" (${insertCols.join(", ")}) VALUES (${placeholders});`, insertVals);
+      } catch {
+        // Safe insert fallback
+      }
+    }
+
+    createdTables.add(targetTableName.toLowerCase());
   };
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!.trim();
     if (line.includes("|") || /^\d+\s+[A-Za-z]+/.test(line)) {
-      if (currentTableLines.length === 0 && i > 0) {
-        precedingContext = lines.slice(Math.max(0, i - 4), i).join(" ");
+      if (currentTableLines.length === 0) {
+        precedingContext = lines
+          .slice(Math.max(0, i - 5), i)
+          .filter((l) => !l.includes("|") && !/^\d+\s+[A-Za-z]+/.test(l.trim()))
+          .join(" ");
       }
       currentTableLines.push(line);
     } else {
@@ -267,118 +416,20 @@ function prepareDatabaseContext(db: any, question?: string, code?: string, expec
   if (currentTableLines.length > 0) {
     processTableGroup(currentTableLines, precedingContext);
   }
-
-  // 3. Ensure ALL tables referenced in code (e.g. Employees, Departments) exist and have all required columns
-  if (code) {
-    const ALL_SQL_KEYWORDS = new Set([
-      "SELECT", "FROM", "JOIN", "ON", "WHERE", "GROUP", "BY", "HAVING", "ORDER",
-      "LIMIT", "OFFSET", "UNION", "ALL", "WITH", "AS", "INNER", "LEFT", "RIGHT",
-      "FULL", "OUTER", "CROSS", "NATURAL", "USING", "AND", "OR", "NOT", "IN", "IS",
-      "NULL", "LIKE", "ILIKE", "BETWEEN", "CASE", "WHEN", "THEN", "ELSE", "END",
-      "SUM", "AVG", "COUNT", "MIN", "MAX", "DISTINCT", "INSERT", "UPDATE", "DELETE",
-      "CREATE", "TABLE", "ASC", "DESC", "INTO", "VALUES", "SET", "DROP", "ALTER"
-    ]);
-
-    const referencedTables = (code.match(/\b(?:from|join|into|update)\s+[`"']?([a-zA-Z0-9_]+)[`"']?/gi) || [])
-      .map((m) => m.split(/\s+/).pop()?.replace(/[^a-zA-Z0-9_]/g, ""))
-      .filter((t): t is string => Boolean(t) && !ALL_SQL_KEYWORDS.has(t.toUpperCase()));
-
-    if (!referencedTables.includes("Employees") && !referencedTables.includes("employees")) {
-      referencedTables.push("Employees");
-    }
-
-    // Extract ALL identifiers from code and expectedOutput
-    const codeIdentifiers = (code.match(/\b[a-zA-Z_][a-zA-Z0-9_]*\b/g) || [])
-      .filter((id) => !ALL_SQL_KEYWORDS.has(id.toUpperCase()) && id.length > 1);
-
-    const expIdentifiers = (expOutput.match(/\b[a-zA-Z_][a-zA-Z0-9_]*\b/g) || [])
-      .filter((id) => !ALL_SQL_KEYWORDS.has(id.toUpperCase()) && id.length > 1);
-
-    const standardCols = [
-      "DepartmentID", "department_id", "DepartmentName", "department_name",
-      "EmployeeID", "employee_id", "EmployeeName", "employee_name",
-      "Department", "department", "Salary", "salary", "Name", "name",
-      "TotalSalary", "AverageSalary", "col_1", "col_2", "col_3", "col_4"
-    ];
-
-    const columnsToEnsure = Array.from(new Set([...codeIdentifiers, ...expIdentifiers, ...standardCols]));
-
-    for (const rawName of referencedTables) {
-      if (!rawName || !/^[a-zA-Z0-9_]+$/.test(rawName)) continue;
-      const namesToRegister = new Set([rawName, rawName.toLowerCase(), rawName.toUpperCase()]);
-
-      for (const tName of Array.from(namesToRegister)) {
-        try {
-          db.exec(`
-            CREATE TABLE IF NOT EXISTS "${tName}" (
-              DepartmentID NUMERIC,
-              department_id NUMERIC,
-              DepartmentName TEXT,
-              department_name TEXT,
-              EmployeeID NUMERIC,
-              employee_id NUMERIC,
-              EmployeeName TEXT,
-              employee_name TEXT,
-              Department TEXT,
-              department TEXT,
-              Salary NUMERIC,
-              salary NUMERIC,
-              TotalSalary NUMERIC,
-              AverageSalary NUMERIC
-            );
-          `);
-        } catch {
-          // Table exists
-        }
-
-        // Alter table to add any missing columns referenced in query or expected output
-        for (const col of columnsToEnsure) {
-          if (/^(e|d|t|a|b|p|s|q)$/i.test(col)) continue;
-          try {
-            db.exec(`ALTER TABLE "${tName}" ADD COLUMN "${col}" TEXT;`);
-          } catch {
-            // Column already exists
-          }
-        }
-
-        try {
-          if (/department/i.test(tName)) {
-            db.exec(`
-              INSERT INTO "${tName}" (DepartmentID, department_id, DepartmentName, department_name) VALUES (1, 1, 'IT', 'IT');
-              INSERT INTO "${tName}" (DepartmentID, department_id, DepartmentName, department_name) VALUES (2, 2, 'HR', 'HR');
-              INSERT INTO "${tName}" (DepartmentID, department_id, DepartmentName, department_name) VALUES (3, 3, 'Finance', 'Finance');
-            `);
-          } else {
-            db.exec(`
-              INSERT INTO "${tName}" (EmployeeID, EmployeeName, DepartmentID, DepartmentName, Department, Salary, TotalSalary, AverageSalary)
-              VALUES (101, 'Alice', 1, 'IT', 'IT', 75000, 205000, 75000);
-              INSERT INTO "${tName}" (EmployeeID, EmployeeName, DepartmentID, DepartmentName, Department, Salary, TotalSalary, AverageSalary)
-              VALUES (102, 'Bob', 1, 'IT', 'IT', 70000, 205000, 70000);
-              INSERT INTO "${tName}" (EmployeeID, EmployeeName, DepartmentID, DepartmentName, Department, Salary, TotalSalary, AverageSalary)
-              VALUES (103, 'Charlie', 1, 'IT', 'IT', 60000, 205000, 60000);
-              INSERT INTO "${tName}" (EmployeeID, EmployeeName, DepartmentID, DepartmentName, Department, Salary, TotalSalary, AverageSalary)
-              VALUES (104, 'David', 3, 'Finance', 'Finance', 40000, 105000, 40000);
-              INSERT INTO "${tName}" (EmployeeID, EmployeeName, DepartmentID, DepartmentName, Department, Salary, TotalSalary, AverageSalary)
-              VALUES (105, 'Emma', 2, 'HR', 'HR', 55000, 55000, 55000);
-              INSERT INTO "${tName}" (EmployeeID, EmployeeName, DepartmentID, DepartmentName, Department, Salary, TotalSalary, AverageSalary)
-              VALUES (106, 'Frank', 1, 'IT', 'IT', 70000, 205000, 70000);
-              INSERT INTO "${tName}" (EmployeeID, EmployeeName, DepartmentID, DepartmentName, Department, Salary, TotalSalary, AverageSalary)
-              VALUES (107, 'Grace', 3, 'Finance', 'Finance', 65000, 105000, 65000);
-            `);
-          }
-        } catch {
-          // Ignore insert glitch
-        }
-      }
-    }
-  }
 }
 
 async function runSql(code: string, question?: string, expectedOutput?: string): Promise<ExecutionResult> {
   const startedAt = performance.now();
   try {
     const initSqlJs = (await import("sql.js")).default;
-    const SQL = await initSqlJs({ locateFile: (file: string) => `${SQLJS_WASM}${file}` });
+    const SQL = await initSqlJs({
+      locateFile: (file: string) => {
+        if (typeof window === "undefined") {
+          return `node_modules/sql.js/dist/${file}`;
+        }
+        return `${SQLJS_WASM}${file}`;
+      },
+    });
     const db = new SQL.Database();
     try {
       prepareDatabaseContext(db, question, code, expectedOutput);
@@ -398,27 +449,23 @@ async function runSql(code: string, question?: string, expectedOutput?: string):
       };
     } catch (error) {
       const errMessage = clean(error instanceof Error ? error.message : String(error));
-      const isMissingTableErr = /no such table/i.test(errMessage);
-      const validSyntax = isValidSqlSyntax(code);
-
-      // Perform Semantic SQL Evaluation fallback ONLY if missing table in database sandbox
-      if (isMissingTableErr && validSyntax) {
-        const fallbackOutput = expectedOutput?.trim() ? clean(expectedOutput) : "Query output evaluated as valid.";
-        return {
-          status: "success",
-          output: fallbackOutput,
-          error: null,
-          timeMs: Math.round(performance.now() - startedAt),
-          note: "Validated semantically using question context data.",
-        };
+      let formattedErr = errMessage;
+      if (/no such table:\s*([a-zA-Z0-9_]+)/i.test(errMessage)) {
+        const tbl = errMessage.match(/no such table:\s*([a-zA-Z0-9_]+)/i)?.[1];
+        formattedErr = `Table '${tbl}' does not exist in the current question dataset.`;
+      } else if (/no such column:\s*([a-zA-Z0-9_.]+)/i.test(errMessage)) {
+        const col = errMessage.match(/no such column:\s*([a-zA-Z0-9_.]+)/i)?.[1];
+        formattedErr = `Column '${col}' does not exist in table or dataset.`;
+      } else {
+        formattedErr = `SQL Error: ${errMessage}`;
       }
 
       return {
         status: "error",
         output: "",
-        error: `SQL Syntax Error: ${errMessage}`,
+        error: formattedErr,
         timeMs: Math.round(performance.now() - startedAt),
-        note: "SQL evaluation — query syntax or execution error.",
+        note: "SQL execution — query runtime error.",
       };
     } finally {
       db.close();
