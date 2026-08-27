@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { ValidatorCore } from "@/components/validator-core";
 import { getTaskAssignmentDetailsFn } from "@/lib/tasks.functions";
+import { getSessionFn } from "@/lib/auth.functions";
 import type { Language } from "@/lib/validation-types";
 
 const searchSchema = z.object({
@@ -13,6 +14,14 @@ const searchSchema = z.object({
 
 export const Route = createFileRoute("/validator")({
   validateSearch: (search) => searchSchema.parse(search),
+  beforeLoad: async () => {
+    try {
+      const session = await getSessionFn();
+      return { session };
+    } catch {
+      return { session: null };
+    }
+  },
   head: () => ({
     meta: [
       { title: "Code Validator | Smart Code Validator" },
@@ -33,6 +42,9 @@ export const Route = createFileRoute("/validator")({
 
 function ValidatorPage() {
   const { assignmentId } = Route.useSearch();
+  const context = Route.useRouteContext();
+  const session = context?.session;
+
   const getTaskAssignmentDetails = useServerFn(getTaskAssignmentDetailsFn);
   const [taskData, setTaskData] = useState<any>(null);
   const [loading, setLoading] = useState(!!assignmentId);
@@ -85,6 +97,10 @@ function ValidatorPage() {
   return (
     <ValidatorCore
       assignmentId={assignmentId}
+      fixedEmployeeName={session?.name || undefined}
+      fixedEmployeeCode={session?.employeeId || undefined}
+      fixedDepartment={session?.department || undefined}
+      employeeUuid={session?.id || undefined}
       initialQuestion={task ? `${task.title}\n\n${task.description}` : undefined}
       initialExpectedOutput={task?.expected_output || undefined}
       initialLanguage={(task?.language as Language) || undefined}
