@@ -42,11 +42,16 @@ function AdminFiles() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-bold">Uploaded Employee Assessments</h2>
-        <p className="text-sm text-muted-foreground">
-          Review employee files, run validation, and publish validation results
-        </p>
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-xl font-bold">Admin Task Documents & System Files</h2>
+          <p className="text-sm text-muted-foreground">
+            Assessment files and task reference documents uploaded for Code Pilot task assignments
+          </p>
+        </div>
+        <Button variant="outline" asChild>
+          <Link to="/admin/submissions">View Employee Submissions →</Link>
+        </Button>
       </div>
 
       <Card>

@@ -43,8 +43,8 @@ export function AppSidebar() {
           </span>
           {!collapsed && (
             <span className="flex flex-col leading-tight">
-              <span className="text-sm font-semibold">Code Pilot</span>
-              <span className="text-xs text-muted-foreground">AI code platform</span>
+              <span className="text-base font-bold tracking-wide text-sidebar-foreground drop-shadow-sm">Code Pilot</span>
+              <span className="text-[11px] font-semibold text-primary">AI Validation Platform</span>
             </span>
           )}
         </div>

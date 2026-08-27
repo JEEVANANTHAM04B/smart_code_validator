@@ -134,9 +134,12 @@ function RootComponent() {
           <div className="flex min-w-0 flex-1 flex-col">
             <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur">
               <SidebarTrigger />
-              <span className="text-sm font-medium text-muted-foreground">
-                Code Pilot validation console
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-base font-bold tracking-wide text-foreground">Code Pilot</span>
+                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-primary/10 text-primary">
+                  Validation Console
+                </span>
+              </div>
               <div className="ml-auto">
                 <ThemeToggle />
               </div>

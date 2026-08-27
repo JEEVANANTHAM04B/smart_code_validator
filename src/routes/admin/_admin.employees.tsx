@@ -127,12 +127,29 @@ function AdminEmployees() {
     }
   };
 
+  const [searchQuery, setSearchQuery] = useState("");
+  const [deptFilter, setDeptFilter] = useState("ALL");
+  const [activityFilter, setActivityFilter] = useState("ALL");
+
+  const filteredEmployeesList = employees.filter((emp) => {
+    const matchesSearch =
+      emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      emp.employee_id.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesDept = deptFilter === "ALL" || emp.department === deptFilter;
+    const isInactive = emp.consecutive_missed >= 2;
+    const matchesActivity =
+      activityFilter === "ALL" ||
+      (activityFilter === "Active" && !isInactive) ||
+      (activityFilter === "Inactive" && isInactive);
+    return matchesSearch && matchesDept && matchesActivity;
+  });
+
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-wrap justify-between items-center gap-4">
         <div>
           <h2 className="text-xl font-bold">Employee Management</h2>
-          <p className="text-sm text-muted-foreground">Manage employee access to the portal</p>
+          <p className="text-sm text-muted-foreground">Manage employee access, department assignment, and activity tracking</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={async () => {
@@ -160,50 +177,101 @@ function AdminEmployees() {
         </div>
       </div>
 
+      {/* Search & Filters Header */}
+      <div className="flex flex-wrap items-center gap-3 bg-muted/30 p-3 rounded-lg border">
+        <div className="flex-1 min-w-[200px]">
+          <Input
+            placeholder="Search by name or employee ID..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-9 text-xs"
+          />
+        </div>
+        <Select value={deptFilter} onValueChange={setDeptFilter}>
+          <SelectTrigger className="w-[180px] h-9 text-xs">
+            <SelectValue placeholder="Department Filter" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All Departments</SelectItem>
+            {DEPARTMENTS.map((d) => (
+              <SelectItem key={d} value={d}>
+                {d}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={activityFilter} onValueChange={setActivityFilter}>
+          <SelectTrigger className="w-[160px] h-9 text-xs">
+            <SelectValue placeholder="Activity Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All Statuses</SelectItem>
+            <SelectItem value="Active">Active</SelectItem>
+            <SelectItem value="Inactive">Inactive (2 Missed Rule)</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
       <Card>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[60px]">S.No</TableHead>
+                <TableHead className="w-[50px]">S.No</TableHead>
                 <TableHead>Employee ID</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Department</TableHead>
                 <TableHead>Role</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>Account</TableHead>
+                <TableHead>Activity (2 Missed Rule)</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={7} className="text-center py-6">Loading...</TableCell></TableRow>
-              ) : employees.length === 0 ? (
-                <TableRow><TableCell colSpan={7} className="text-center py-6 text-muted-foreground">No employees found.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="text-center py-6">Loading...</TableCell></TableRow>
+              ) : filteredEmployeesList.length === 0 ? (
+                <TableRow><TableCell colSpan={8} className="text-center py-6 text-muted-foreground">No employees match your search filter.</TableCell></TableRow>
               ) : (
-                employees.map((emp, index) => (
-                  <TableRow key={emp.id}>
-                    <TableCell className="font-medium text-muted-foreground">{index + 1}</TableCell>
-                    <TableCell className="font-medium">{emp.employee_id}</TableCell>
-                    <TableCell>{emp.name}</TableCell>
-                    <TableCell>{emp.department}</TableCell>
-                    <TableCell>{emp.is_admin ? "Admin" : "Employee"}</TableCell>
-                    <TableCell>
-                      {emp.access_status ? (
-                        <span className="text-green-600 bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded-full text-xs">Active</span>
-                      ) : (
-                        <span className="text-red-600 bg-red-100 dark:bg-red-900/30 px-2 py-1 rounded-full text-xs">Disabled</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(emp)}>
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDelete(emp.id)}>
-                        <Trash className="w-4 h-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
+                filteredEmployeesList.map((emp, index) => {
+                  const isInactive = emp.consecutive_missed >= 2;
+                  return (
+                    <TableRow key={emp.id}>
+                      <TableCell className="font-medium text-muted-foreground">{index + 1}</TableCell>
+                      <TableCell className="font-medium font-mono">{emp.employee_id}</TableCell>
+                      <TableCell>{emp.name}</TableCell>
+                      <TableCell>{emp.department}</TableCell>
+                      <TableCell>{emp.is_admin ? "Admin" : "Employee"}</TableCell>
+                      <TableCell>
+                        {emp.access_status ? (
+                          <span className="text-green-600 bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded-full text-xs font-medium">Active</span>
+                        ) : (
+                          <span className="text-red-600 bg-red-100 dark:bg-red-900/30 px-2 py-0.5 rounded-full text-xs font-medium">Disabled</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {isInactive ? (
+                          <span className="text-destructive bg-destructive/10 px-2 py-0.5 rounded-full text-xs font-semibold" title="Missed 2 consecutive assigned assessments">
+                            Inactive ({emp.consecutive_missed || 2} Missed)
+                          </span>
+                        ) : (
+                          <span className="text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30 px-2 py-0.5 rounded-full text-xs font-medium">
+                            Active ({emp.consecutive_missed || 0} Missed)
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(emp)}>
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDelete(emp.id)}>
+                          <Trash className="w-4 h-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
