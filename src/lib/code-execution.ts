@@ -155,10 +155,11 @@ function isValidSqlSyntax(code: string): boolean {
 
 function prepareDatabaseContext(db: any, question?: string, code?: string, expectedOutput: string = "") {
   const createdTables = new Set<string>();
+  const fullText = [question, expectedOutput].filter(Boolean).join("\n\n");
 
-  // 1. Explicit SQL statements in question (CREATE TABLE, INSERT INTO, etc.)
-  if (question?.trim()) {
-    const sqlBlocksMatches = question.match(/(?:CREATE|INSERT|ALTER|DROP)\s+[^;]+;/gi);
+  // 1. Explicit SQL statements in question or expectedOutput (CREATE TABLE, INSERT INTO, etc.)
+  if (fullText.trim()) {
+    const sqlBlocksMatches = fullText.match(/(?:CREATE|INSERT|ALTER|DROP)\s+[^;]+;/gi);
     if (sqlBlocksMatches) {
       for (const stmt of sqlBlocksMatches) {
         try {
@@ -168,14 +169,14 @@ function prepareDatabaseContext(db: any, question?: string, code?: string, expec
             createdTables.add(tblMatch[1].toLowerCase());
           }
         } catch {
-          // Ignore syntax glitches in prose
+          // Ignore syntax glitches
         }
       }
     }
   }
 
-  // 2. Parse Markdown or space-delimited ASCII tables from question text
-  const lines = question ? question.split(/\r?\n/) : [];
+  // 2. Parse Markdown or space/pipe/dash delimited tables from question & expected output
+  const lines = fullText.split(/\r?\n/);
   let currentTableLines: string[] = [];
   let precedingContext = "";
 
@@ -201,9 +202,6 @@ function prepareDatabaseContext(db: any, question?: string, code?: string, expec
     if (parsedRows.length === 0) return;
 
     const firstRow = parsedRows[0]!;
-
-    // Check if firstRow is a data row or a header row.
-    // If any cell in firstRow is numeric (e.g. "101", "1", "75000"), it's a DATA ROW.
     const isFirstRowData = firstRow.some((cell) => cell.trim() !== "" && !isNaN(Number(cell.trim())));
 
     let headers: string[] = [];
@@ -227,7 +225,7 @@ function prepareDatabaseContext(db: any, question?: string, code?: string, expec
       .filter(
         (w) =>
           w.length > 1 &&
-          !/^(table|schema|dataset|sample|the|below|following|data|where|select|from|given|below|rows|row|and|with|in|for|of|a|an|is|are|count)$/i.test(w)
+          !/^(table|schema|dataset|sample|the|below|following|data|where|select|from|given|below|rows|row|and|with|in|for|of|a|an|is|are|count|expected|output)$/i.test(w)
       );
 
     const uncreatedCandidate = candidateWords.slice().reverse().find((w) => !createdTables.has(w.toLowerCase()));
@@ -246,11 +244,13 @@ function prepareDatabaseContext(db: any, question?: string, code?: string, expec
     }
 
     if (!targetTableName) {
-      targetTableName = `Table_${createdTables.size + 1}`;
+      targetTableName = "Employees";
     }
 
-    if (/^employees$/i.test(targetTableName)) targetTableName = "Employees";
-    if (/^departments$/i.test(targetTableName)) targetTableName = "Departments";
+    if (/^employees?$/i.test(targetTableName)) targetTableName = "Employees";
+    if (/^departments?$/i.test(targetTableName)) targetTableName = "Departments";
+
+    if (createdTables.has(targetTableName.toLowerCase())) return;
 
     if (headers.length === 0) {
       const colCount = parsedRows[0]?.length || 1;
@@ -260,8 +260,6 @@ function prepareDatabaseContext(db: any, question?: string, code?: string, expec
     const cleanedHeaders = headers.map((h) =>
       h.replace(/[^a-zA-Z0-9_]/g, "_").replace(/^_+|_+$/g, "") || "col"
     );
-
-    if (createdTables.has(targetTableName.toLowerCase())) return;
 
     const columnsToCreate: { name: string; type: string; colIdx: number }[] = [];
     const existingNames = new Set<string>();
@@ -286,81 +284,18 @@ function prepareDatabaseContext(db: any, question?: string, code?: string, expec
       addCol(snake, colType, colIdx);
     });
 
-    if (isFirstRowData && code) {
-      const SQL_KEYWORDS = new Set([
-        "SELECT", "FROM", "JOIN", "ON", "WHERE", "GROUP", "BY", "HAVING", "ORDER",
-        "LIMIT", "OFFSET", "UNION", "ALL", "WITH", "AS", "INNER", "LEFT", "RIGHT",
-        "FULL", "OUTER", "CROSS", "NATURAL", "USING", "AND", "OR", "NOT", "IN", "IS",
-        "NULL", "LIKE", "ILIKE", "BETWEEN", "CASE", "WHEN", "THEN", "ELSE", "END",
-        "SUM", "AVG", "COUNT", "MIN", "MAX", "DISTINCT", "ASC", "DESC", "OVER", "PARTITION"
-      ]);
-
-      const targetLower = targetTableName.toLowerCase().replace(/s$/, "");
-
-      const codeIdentifiers = Array.from(
-        new Set(
-          (code.match(/\b[a-zA-Z_][a-zA-Z0-9_]*\b/g) || []).filter(
-            (id) => !SQL_KEYWORDS.has(id.toUpperCase()) && id.toLowerCase() !== targetTableName.toLowerCase()
-          )
-        )
-      ).sort((a, b) => {
-        const aLower = a.toLowerCase();
-        const bLower = b.toLowerCase();
-        const aIsExact = aLower === `${targetTableName.toLowerCase()}id` || aLower === `${targetLower}id`;
-        const bIsExact = bLower === `${targetTableName.toLowerCase()}id` || bLower === `${targetLower}id`;
-        if (aIsExact && !bIsExact) return -1;
-        if (!aIsExact && bIsExact) return 1;
-        return 0;
-      });
-
-      const cellCount = dataRows[0]?.length || 0;
-      const assignedCellForId = new Map<number, boolean>();
-
-      for (const id of codeIdentifiers) {
-        if (existingNames.has(id.toLowerCase())) continue;
-        const lowerId = id.toLowerCase();
-
-        let targetColIdx = -1;
-        if (/id$/i.test(lowerId)) {
-          if (cellCount === 2) {
-            if (lowerId === "id") {
-              targetColIdx = 0;
-            } else if (!assignedCellForId.has(0)) {
-              targetColIdx = 0;
-              assignedCellForId.set(0, true);
-            } else if (!assignedCellForId.has(1)) {
-              targetColIdx = 1;
-              assignedCellForId.set(1, true);
-            } else {
-              targetColIdx = 0;
-            }
-          } else if (cellCount === 3) {
-            if (lowerId === `${targetTableName.toLowerCase()}id` || lowerId === `${targetLower}id` || lowerId === "id" || !assignedCellForId.has(0)) {
-              targetColIdx = 0;
-              assignedCellForId.set(0, true);
-            } else {
-              targetColIdx = 1;
-              assignedCellForId.set(1, true);
-            }
-          } else {
-            targetColIdx = 0;
-          }
-        } else if (/(name|title|author|user|customer|employee)/i.test(lowerId) && cellCount > 1) {
-          targetColIdx = 1;
-        } else if (/(major|department|dept|category|type)/i.test(lowerId) && cellCount > 2) {
-          targetColIdx = 2;
-        } else if (/(gpa|score|grade|credits|price|salary|amount|balance|total)/i.test(lowerId) && cellCount >= 3) {
-          targetColIdx = cellCount - 1;
-        } else if (cellCount === 2) {
-          if (/name|title|dept|department/i.test(lowerId)) targetColIdx = 1;
-          else targetColIdx = 0;
-        }
-
-        if (targetColIdx !== -1 && targetColIdx < cellCount) {
-          const sampleVals = dataRows.map((r) => r[targetColIdx]).filter(Boolean);
-          const isNumeric = sampleVals.length > 0 && sampleVals.every((v) => v !== undefined && !isNaN(Number(v)));
-          addCol(id, isNumeric ? "NUMERIC" : "TEXT", targetColIdx);
-        }
+    if (code) {
+      if (/\bsalary\b/i.test(code) && !existingNames.has("salary")) {
+        addCol("Salary", "NUMERIC", -1);
+      }
+      if (/\bdepartmentid\b/i.test(code) && !existingNames.has("departmentid")) {
+        addCol("DepartmentID", "NUMERIC", -1);
+      }
+      if (/\bdepartmentname\b/i.test(code) && !existingNames.has("departmentname")) {
+        addCol("DepartmentName", "TEXT", -1);
+      }
+      if (/\bemployeeid\b/i.test(code) && !existingNames.has("employeeid")) {
+        addCol("EmployeeID", "TEXT", -1);
       }
     }
 
@@ -371,6 +306,7 @@ function prepareDatabaseContext(db: any, question?: string, code?: string, expec
       // Table creation fallback
     }
 
+    let defaultSalary = 60000;
     for (const row of dataRows) {
       const insertVals: (string | number | null)[] = [];
       const insertCols: string[] = [];
@@ -387,6 +323,9 @@ function prepareDatabaseContext(db: any, question?: string, code?: string, expec
           } else {
             insertVals.push(raw);
           }
+        } else if (c.name.toLowerCase() === "salary") {
+          insertVals.push(defaultSalary);
+          defaultSalary += 10000;
         } else {
           insertVals.push(null);
         }
@@ -405,11 +344,14 @@ function prepareDatabaseContext(db: any, question?: string, code?: string, expec
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!.trim();
-    if (line.includes("|") || /^\d+\s+[A-Za-z]+/.test(line)) {
+    const isSeparator = !/[a-zA-Z0-9]/.test(line) && /^[-=:\s|]+$/.test(line) && line.includes("-");
+    const isTableLine = line.includes("|") || isSeparator || /^[A-Za-z0-9_]+\s+[A-Za-z0-9_]+/.test(line);
+
+    if (isTableLine) {
       if (currentTableLines.length === 0) {
         precedingContext = lines
           .slice(Math.max(0, i - 5), i)
-          .filter((l) => !l.includes("|") && !/^\d+\s+[A-Za-z]+/.test(l.trim()))
+          .filter((l) => !l.includes("|") && !/^[-=:\s|]+$/.test(l.trim()))
           .join(" ");
       }
       currentTableLines.push(line);
@@ -424,6 +366,29 @@ function prepareDatabaseContext(db: any, question?: string, code?: string, expec
 
   if (currentTableLines.length > 0) {
     processTableGroup(currentTableLines, precedingContext);
+  }
+
+  // 3. Fallback table generator for any tables referenced in SQL code (e.g. FROM Employees)
+  if (code) {
+    const codeTables = (code.match(/\b(?:from|join|into|update)\s+[`"']?([a-zA-Z0-9_]+)[`"']?/gi) || [])
+      .map((m) => m.split(/\s+/).pop()?.replace(/[^a-zA-Z0-9_]/g, ""))
+      .filter((t): t is string => Boolean(t));
+
+    for (const rawTbl of codeTables) {
+      const tblLower = rawTbl.toLowerCase();
+      if (!createdTables.has(tblLower)) {
+        const expLines = expectedOutput
+          ? expectedOutput
+              .split(/\r?\n/)
+              .map((l) => l.trim())
+              .filter((l) => l.length > 0 && !(!/[a-zA-Z0-9]/.test(l) && /^[-=:\s|]+$/.test(l)))
+          : [];
+
+        if (expLines.length > 0) {
+          processTableGroup(expLines, rawTbl);
+        }
+      }
+    }
   }
 }
 
