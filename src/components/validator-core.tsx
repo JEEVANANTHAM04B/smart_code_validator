@@ -58,6 +58,8 @@ const SQL_STARTER = `-- Write SQL query for this question
 SELECT * FROM employees;
 `;
 
+import { submitTaskAttemptFn, submitFinalTaskAssessmentFn } from "@/lib/tasks.functions";
+
 export interface QuestionValidationResult {
   id: string;
   questionNumber: number;
@@ -71,6 +73,7 @@ export interface QuestionValidationResult {
 }
 
 interface ValidatorCoreProps {
+  assignmentId?: string | undefined;
   fixedEmployeeName?: string | undefined;
   fixedEmployeeCode?: string | undefined;
   fixedDepartment?: string | undefined;
@@ -84,10 +87,12 @@ interface ValidatorCoreProps {
   initialQuestion?: string | undefined;
   initialExpectedOutput?: string | undefined;
   initialCode?: string | undefined;
+  initialLanguage?: Language | undefined;
   onHistoryClick?: (() => void) | undefined;
 }
 
 export function ValidatorCore({
+  assignmentId,
   fixedEmployeeName,
   fixedEmployeeCode,
   fixedDepartment,
@@ -101,12 +106,15 @@ export function ValidatorCore({
   initialQuestion,
   initialExpectedOutput,
   initialCode,
+  initialLanguage,
   onHistoryClick,
 }: ValidatorCoreProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const validate = useServerFn(validateSubmission);
   const createSubmission = useServerFn(createSubmissionFn);
+  const submitTaskAttempt = useServerFn(submitTaskAttemptFn);
+  const submitFinalTaskAssessment = useServerFn(submitFinalTaskAssessmentFn);
 
   // Document Viewer Modal State
   const [isDocViewerOpen, setIsDocViewerOpen] = useState(false);
@@ -213,8 +221,12 @@ export function ValidatorCore({
   const [employeeName, setEmployeeName] = useState(fixedEmployeeName ?? "");
   const [employeeCode, setEmployeeCode] = useState(fixedEmployeeCode ?? "");
   const [department, setDepartment] = useState<string>(fixedDepartment ?? DEPARTMENTS[0]);
-  const [language, setLanguage] = useState<Language>("python");
+  const [language, setLanguage] = useState<Language>(initialLanguage ?? "python");
   const [code, setCode] = useState(initialCode ?? "");
+
+  useEffect(() => {
+    if (initialLanguage) setLanguage(initialLanguage);
+  }, [initialLanguage]);
   const [report, setReport] = useState<ValidationReport | null>(null);
   const [reviewedCode, setReviewedCode] = useState("");
   const [reviewedLanguage, setReviewedLanguage] = useState<Language>("python");
@@ -323,6 +335,15 @@ export function ValidatorCore({
         return [...filtered, newQuestionResult].sort((a, b) => a.questionNumber - b.questionNumber);
       });
 
+      if (assignmentId) {
+        submitTaskAttempt({
+          data: {
+            assignmentId,
+            code,
+          },
+        }).catch((err) => console.warn("Task attempt recording warning:", err));
+      }
+
       toast.success(
         result.verdict === "accepted"
           ? `Question ${currentQuestionNum} validated: ACCEPTED (${result.scores.overall}%)`
@@ -412,6 +433,18 @@ export function ValidatorCore({
           total_questions: Math.max(totalQuestionsInput, validatedQuestions.length),
         } as any,
       });
+
+      if (assignmentId) {
+        await submitFinalTaskAssessment({
+          data: { assignmentId },
+        });
+        toast.success("Assigned assessment submitted successfully!");
+        void queryClient.invalidateQueries({ queryKey: ["tasks"] });
+        setTimeout(() => {
+          navigate({ to: "/employee/tasks" });
+        }, 1500);
+        return;
+      }
 
       toast.success("Complete assessment submitted and published to employee successfully!");
       void queryClient.invalidateQueries({ queryKey: ["submissions"] });

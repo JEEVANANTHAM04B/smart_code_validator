@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -46,6 +46,7 @@ export const Route = createFileRoute("/employee/_employee/tasks")({
 });
 
 function EmployeeTasksPage() {
+  const router = useRouter();
   const listEmployeeTasks = useServerFn(listEmployeeTasksFn);
   const getTaskAssignmentDetails = useServerFn(getTaskAssignmentDetailsFn);
   const submitTaskAttempt = useServerFn(submitTaskAttemptFn);
@@ -81,45 +82,8 @@ function EmployeeTasksPage() {
     loadData();
   }, []);
 
-  const handleOpenWorkspace = async (assignmentId: string) => {
-    try {
-      setLoadingDoc(true);
-      const details = await getTaskAssignmentDetails({ data: { assignmentId } });
-      setSelectedAssignment(details);
-      setLatestReport(null);
-
-      // Load latest attempt code or default starter code
-      const attempts = details.attempts || [];
-      if (attempts.length > 0) {
-        const lastAttempt = attempts[attempts.length - 1];
-        setEditorCode(lastAttempt.code);
-        if (lastAttempt.report) setLatestReport(lastAttempt.report);
-      } else {
-        setEditorCode(
-          details.task.language === "python"
-            ? "# Write your Python solution here\n"
-            : "-- Write your SQL query here\n"
-        );
-      }
-
-      // Load attached document content if available
-      if (details.task?.document_id) {
-        try {
-          const fileRes = await fetchFileContent({ data: { fileId: details.task.document_id } });
-          setDocContent(fileRes.content || null);
-        } catch {
-          setDocContent(null);
-        }
-      } else {
-        setDocContent(null);
-      }
-
-      setIsWorkspaceOpen(true);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to open task workspace");
-    } finally {
-      setLoadingDoc(false);
-    }
+  const handleOpenWorkspace = (assignmentId: string) => {
+    router.navigate({ to: "/validator", search: { assignmentId } });
   };
 
   // Upload source file (.py / .sql) and load file text into Code Editor
