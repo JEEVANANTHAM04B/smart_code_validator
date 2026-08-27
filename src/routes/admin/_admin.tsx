@@ -68,6 +68,15 @@ function AdminLayout() {
         </Button>
         <Button variant="ghost" asChild className="gap-2">
           <Link
+            to="/admin/tasks"
+            activeProps={{ className: "bg-accent text-accent-foreground" }}
+          >
+            <FileText className="h-4 w-4" />
+            Task Management
+          </Link>
+        </Button>
+        <Button variant="ghost" asChild className="gap-2">
+          <Link
             to="/admin/files"
             activeProps={{ className: "bg-accent text-accent-foreground" }}
           >

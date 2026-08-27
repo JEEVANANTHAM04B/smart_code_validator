@@ -21,9 +21,11 @@ import { Route as AdminAdminIndexRouteImport } from './routes/admin/_admin.index
 import { Route as AdminAdminEmployeesRouteImport } from './routes/admin/_admin.employees'
 import { Route as AdminAdminFilesRouteImport } from './routes/admin/_admin.files'
 import { Route as AdminAdminSubmissionsRouteImport } from './routes/admin/_admin.submissions'
+import { Route as AdminAdminTasksRouteImport } from './routes/admin/_admin.tasks'
 import { Route as AdminAdminValidateRouteImport } from './routes/admin/_admin.validate'
 import { Route as EmployeeEmployeeIndexRouteImport } from './routes/employee/_employee.index'
 import { Route as EmployeeEmployeeHistoryRouteImport } from './routes/employee/_employee.history'
+import { Route as EmployeeEmployeeTasksRouteImport } from './routes/employee/_employee.tasks'
 import { Route as EmployeeEmployeeUploadRouteImport } from './routes/employee/_employee.upload'
 import { Route as EmployeeEmployeeValidateRouteImport } from './routes/employee/_employee.validate'
 
@@ -87,6 +89,11 @@ const AdminAdminSubmissionsRoute = AdminAdminSubmissionsRouteImport.update({
   path: '/submissions',
   getParentRoute: () => AdminAdminRoute,
 } as any)
+const AdminAdminTasksRoute = AdminAdminTasksRouteImport.update({
+  id: '/tasks',
+  path: '/tasks',
+  getParentRoute: () => AdminAdminRoute,
+} as any)
 const AdminAdminValidateRoute = AdminAdminValidateRouteImport.update({
   id: '/validate',
   path: '/validate',
@@ -100,6 +107,11 @@ const EmployeeEmployeeIndexRoute = EmployeeEmployeeIndexRouteImport.update({
 const EmployeeEmployeeHistoryRoute = EmployeeEmployeeHistoryRouteImport.update({
   id: '/history',
   path: '/history',
+  getParentRoute: () => EmployeeEmployeeRoute,
+} as any)
+const EmployeeEmployeeTasksRoute = EmployeeEmployeeTasksRouteImport.update({
+  id: '/tasks',
+  path: '/tasks',
   getParentRoute: () => EmployeeEmployeeRoute,
 } as any)
 const EmployeeEmployeeUploadRoute = EmployeeEmployeeUploadRouteImport.update({
@@ -126,8 +138,10 @@ export interface FileRoutesByFullPath {
   '/admin/employees': typeof AdminAdminEmployeesRoute
   '/admin/files': typeof AdminAdminFilesRoute
   '/admin/submissions': typeof AdminAdminSubmissionsRoute
+  '/admin/tasks': typeof AdminAdminTasksRoute
   '/admin/validate': typeof AdminAdminValidateRoute
   '/employee/history': typeof EmployeeEmployeeHistoryRoute
+  '/employee/tasks': typeof EmployeeEmployeeTasksRoute
   '/employee/upload': typeof EmployeeEmployeeUploadRoute
   '/employee/validate': typeof EmployeeEmployeeValidateRoute
   '/admin/': typeof AdminAdminIndexRoute
@@ -143,8 +157,10 @@ export interface FileRoutesByTo {
   '/admin/employees': typeof AdminAdminEmployeesRoute
   '/admin/files': typeof AdminAdminFilesRoute
   '/admin/submissions': typeof AdminAdminSubmissionsRoute
+  '/admin/tasks': typeof AdminAdminTasksRoute
   '/admin/validate': typeof AdminAdminValidateRoute
   '/employee/history': typeof EmployeeEmployeeHistoryRoute
+  '/employee/tasks': typeof EmployeeEmployeeTasksRoute
   '/employee/upload': typeof EmployeeEmployeeUploadRoute
   '/employee/validate': typeof EmployeeEmployeeValidateRoute
   '/admin': typeof AdminAdminIndexRoute
@@ -163,8 +179,10 @@ export interface FileRoutesById {
   '/admin/_admin/employees': typeof AdminAdminEmployeesRoute
   '/admin/_admin/files': typeof AdminAdminFilesRoute
   '/admin/_admin/submissions': typeof AdminAdminSubmissionsRoute
+  '/admin/_admin/tasks': typeof AdminAdminTasksRoute
   '/admin/_admin/validate': typeof AdminAdminValidateRoute
   '/employee/_employee/history': typeof EmployeeEmployeeHistoryRoute
+  '/employee/_employee/tasks': typeof EmployeeEmployeeTasksRoute
   '/employee/_employee/upload': typeof EmployeeEmployeeUploadRoute
   '/employee/_employee/validate': typeof EmployeeEmployeeValidateRoute
   '/admin/_admin/': typeof AdminAdminIndexRoute
@@ -184,8 +202,10 @@ export interface FileRouteTypes {
     | '/admin/employees'
     | '/admin/files'
     | '/admin/submissions'
+    | '/admin/tasks'
     | '/admin/validate'
     | '/employee/history'
+    | '/employee/tasks'
     | '/employee/upload'
     | '/employee/validate'
     | '/admin/'
@@ -201,8 +221,10 @@ export interface FileRouteTypes {
     | '/admin/employees'
     | '/admin/files'
     | '/admin/submissions'
+    | '/admin/tasks'
     | '/admin/validate'
     | '/employee/history'
+    | '/employee/tasks'
     | '/employee/upload'
     | '/employee/validate'
     | '/admin'
@@ -220,8 +242,10 @@ export interface FileRouteTypes {
     | '/admin/_admin/employees'
     | '/admin/_admin/files'
     | '/admin/_admin/submissions'
+    | '/admin/_admin/tasks'
     | '/admin/_admin/validate'
     | '/employee/_employee/history'
+    | '/employee/_employee/tasks'
     | '/employee/_employee/upload'
     | '/employee/_employee/validate'
     | '/admin/_admin/'
@@ -325,6 +349,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminAdminSubmissionsRouteImport
       parentRoute: typeof AdminAdminRoute
     }
+    '/admin/_admin/tasks': {
+      id: '/admin/_admin/tasks'
+      path: '/tasks'
+      fullPath: '/admin/tasks'
+      preLoaderRoute: typeof AdminAdminTasksRouteImport
+      parentRoute: typeof AdminAdminRoute
+    }
     '/admin/_admin/validate': {
       id: '/admin/_admin/validate'
       path: '/validate'
@@ -344,6 +375,13 @@ declare module '@tanstack/react-router' {
       path: '/history'
       fullPath: '/employee/history'
       preLoaderRoute: typeof EmployeeEmployeeHistoryRouteImport
+      parentRoute: typeof EmployeeEmployeeRoute
+    }
+    '/employee/_employee/tasks': {
+      id: '/employee/_employee/tasks'
+      path: '/tasks'
+      fullPath: '/employee/tasks'
+      preLoaderRoute: typeof EmployeeEmployeeTasksRouteImport
       parentRoute: typeof EmployeeEmployeeRoute
     }
     '/employee/_employee/upload': {
@@ -367,6 +405,7 @@ interface AdminAdminRouteChildren {
   AdminAdminEmployeesRoute: typeof AdminAdminEmployeesRoute
   AdminAdminFilesRoute: typeof AdminAdminFilesRoute
   AdminAdminSubmissionsRoute: typeof AdminAdminSubmissionsRoute
+  AdminAdminTasksRoute: typeof AdminAdminTasksRoute
   AdminAdminValidateRoute: typeof AdminAdminValidateRoute
   AdminAdminIndexRoute: typeof AdminAdminIndexRoute
 }
@@ -375,6 +414,7 @@ const AdminAdminRouteChildren: AdminAdminRouteChildren = {
   AdminAdminEmployeesRoute: AdminAdminEmployeesRoute,
   AdminAdminFilesRoute: AdminAdminFilesRoute,
   AdminAdminSubmissionsRoute: AdminAdminSubmissionsRoute,
+  AdminAdminTasksRoute: AdminAdminTasksRoute,
   AdminAdminValidateRoute: AdminAdminValidateRoute,
   AdminAdminIndexRoute: AdminAdminIndexRoute,
 }
@@ -385,6 +425,7 @@ const AdminAdminRouteWithChildren = AdminAdminRoute._addFileChildren(
 
 interface EmployeeEmployeeRouteChildren {
   EmployeeEmployeeHistoryRoute: typeof EmployeeEmployeeHistoryRoute
+  EmployeeEmployeeTasksRoute: typeof EmployeeEmployeeTasksRoute
   EmployeeEmployeeUploadRoute: typeof EmployeeEmployeeUploadRoute
   EmployeeEmployeeValidateRoute: typeof EmployeeEmployeeValidateRoute
   EmployeeEmployeeIndexRoute: typeof EmployeeEmployeeIndexRoute
@@ -392,6 +433,7 @@ interface EmployeeEmployeeRouteChildren {
 
 const EmployeeEmployeeRouteChildren: EmployeeEmployeeRouteChildren = {
   EmployeeEmployeeHistoryRoute: EmployeeEmployeeHistoryRoute,
+  EmployeeEmployeeTasksRoute: EmployeeEmployeeTasksRoute,
   EmployeeEmployeeUploadRoute: EmployeeEmployeeUploadRoute,
   EmployeeEmployeeValidateRoute: EmployeeEmployeeValidateRoute,
   EmployeeEmployeeIndexRoute: EmployeeEmployeeIndexRoute,

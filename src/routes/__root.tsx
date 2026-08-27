@@ -81,15 +81,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Smart Code Validator" },
+      { title: "Code Pilot" },
       {
         name: "description",
-        content: "AI-powered Python and SQL code validation platform for engineering teams.",
+        content: "AI-powered Python and SQL code validation & task platform for engineering teams.",
       },
-      { property: "og:title", content: "Smart Code Validator" },
+      { property: "og:title", content: "Code Pilot" },
       {
         property: "og:description",
-        content: "AI-powered Python and SQL code validation platform for engineering teams.",
+        content: "AI-powered Python and SQL code validation & task platform for engineering teams.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -135,7 +135,7 @@ function RootComponent() {
             <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur">
               <SidebarTrigger />
               <span className="text-sm font-medium text-muted-foreground">
-                AI code validation console
+                Code Pilot validation console
               </span>
               <div className="ml-auto">
                 <ThemeToggle />

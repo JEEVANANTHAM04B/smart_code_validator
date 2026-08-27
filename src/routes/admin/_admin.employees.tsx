@@ -134,9 +134,30 @@ function AdminEmployees() {
           <h2 className="text-xl font-bold">Employee Management</h2>
           <p className="text-sm text-muted-foreground">Manage employee access to the portal</p>
         </div>
-        <Button onClick={handleOpenNew} className="gap-2">
-          <Plus className="w-4 h-4" /> Add Employee
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={async () => {
+            try {
+              const { exportEmployeeListCsvFn } = await import("@/lib/tasks.functions");
+              const { csvContent } = await exportEmployeeListCsvFn();
+              const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+              const url = URL.createObjectURL(blob);
+              const link = document.createElement("a");
+              link.href = url;
+              link.setAttribute("download", `employee-list-${new Date().toISOString().slice(0, 10)}.csv`);
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+              toast.success("Employee list exported");
+            } catch (err: any) {
+              toast.error(err.message || "Failed to export employee list");
+            }
+          }} className="gap-2">
+            Download Employee List
+          </Button>
+          <Button onClick={handleOpenNew} className="gap-2">
+            <Plus className="w-4 h-4" /> Add Employee
+          </Button>
+        </div>
       </div>
 
       <Card>

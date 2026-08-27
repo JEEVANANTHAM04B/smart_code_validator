@@ -150,7 +150,7 @@ export async function exportReportPdf(report: ValidationReport, meta: ReportExpo
     }
   };
 
-  write("Smart Code Validator — Validation Report", 18, "bold");
+  write("Code Pilot — Validation Report", 18, "bold");
   y += 6;
 
   for (const section of buildSections(report, meta)) {
@@ -170,7 +170,7 @@ export async function exportReportDocx(report: ValidationReport, meta: ReportExp
   const children: InstanceType<typeof Paragraph>[] = [
     new Paragraph({
       heading: HeadingLevel.HEADING_1,
-      children: [new TextRun({ text: "Smart Code Validator — Validation Report", bold: true })],
+      children: [new TextRun({ text: "Code Pilot — Validation Report", bold: true })],
     }),
   ];
 

@@ -32,13 +32,13 @@ import { DIFFICULTIES } from "@/lib/validation-types";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Dashboard | Smart Code Validator" },
+      { title: "Dashboard | Code Pilot" },
       {
         name: "description",
         content:
           "Track Python and SQL code submissions, acceptance rate, AI quality scores and difficulty distribution across your engineering team.",
       },
-      { property: "og:title", content: "Dashboard | Smart Code Validator" },
+      { property: "og:title", content: "Dashboard | Code Pilot" },
       {
         property: "og:description",
         content: "AI-powered validation metrics for Python and SQL code submissions.",

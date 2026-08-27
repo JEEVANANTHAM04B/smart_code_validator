@@ -144,4 +144,104 @@ export const recordFileFn = createServerFn({ method: "POST" })
     return { success: true, id: record.id };
   });
 
+export const uploadFileFn = createServerFn({ method: "POST" })
+  .inputValidator(
+    (input: unknown) =>
+      z
+        .object({
+          fileName: z.string(),
+          fileType: z.string(),
+          fileSize: z.number().max(50 * 1024 * 1024, "File size must not exceed 50 MB"),
+          base64Data: z.string(),
+        })
+        .parse(input)
+  )
+  .handler(async ({ data }) => {
+    const session = await requireAuthSession();
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const storagePath = `${session.id}/${Date.now()}_${data.fileName}`;
+    const buffer = Buffer.from(data.base64Data, "base64");
+
+    const { error: uploadErr } = await supabaseAdmin.storage
+      .from("assessments")
+      .upload(storagePath, buffer, {
+        contentType: data.fileType || "application/octet-stream",
+        upsert: true,
+      });
+
+    if (uploadErr) {
+      console.error("[Upload File Error]", uploadErr);
+      throw new Error(`Failed to upload file to storage: ${uploadErr.message}`);
+    }
+
+    const { data: record, error: dbErr } = await supabaseAdmin
+      .from("employee_files")
+      .insert([
+        {
+          employee_uuid: session.id,
+          original_name: data.fileName,
+          file_type: data.fileType,
+          file_size: data.fileSize,
+          file_path: storagePath,
+        },
+      ])
+      .select("id")
+      .single();
+
+    if (dbErr || !record) {
+      throw new Error(`Database error recording file: ${dbErr?.message || "Insert error"}`);
+    }
+
+    return { success: true, id: record.id, filePath: storagePath };
+  });
+
+export const fetchFileContentFn = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => z.object({ fileId: z.string().uuid() }).parse(input))
+  .handler(async ({ data }) => {
+    await requireAuthSession();
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: fileRecord, error: fetchErr } = await supabaseAdmin
+      .from("employee_files")
+      .select("*")
+      .eq("id", data.fileId)
+      .single();
+
+    if (fetchErr || !fileRecord) {
+      throw new Error("Document not found");
+    }
+
+    const { data: fileBlob, error: downloadErr } = await supabaseAdmin.storage
+      .from("assessments")
+      .download(fileRecord.file_path);
+
+    if (downloadErr || !fileBlob) {
+      return { content: "" };
+    }
+
+    const arrayBuffer = await fileBlob.arrayBuffer();
+    const ext = (fileRecord.original_name || "").split(".").pop()?.toLowerCase();
+    const isDocx =
+      ext === "docx" ||
+      fileRecord.file_type?.toLowerCase().includes("word") ||
+      fileRecord.file_type?.toLowerCase().includes("officedocument");
+
+    let textContent = "";
+    if (isDocx) {
+      try {
+        const mammoth = await import("mammoth");
+        const rawRes = await mammoth.extractRawText({ arrayBuffer });
+        textContent = rawRes.value || "";
+      } catch {
+        textContent = "";
+      }
+    } else {
+      textContent = new TextDecoder().decode(arrayBuffer);
+    }
+
+    return { content: textContent };
+  });
+
+
 
