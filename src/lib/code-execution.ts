@@ -9,6 +9,15 @@ export interface ExecutionResult {
   note: string;
 }
 
+// Ensure __dirname is polyfilled in ESM / Vercel Serverless environment
+if (typeof globalThis !== "undefined" && !(globalThis as any).__dirname) {
+  try {
+    (globalThis as any).__dirname = typeof process !== "undefined" && process.cwd ? process.cwd() : "/";
+  } catch {
+    (globalThis as any).__dirname = "/";
+  }
+}
+
 const PYODIDE_VERSION = "314.0.3";
 const PYODIDE_INDEX = `https://cdn.jsdelivr.net/npm/pyodide@${PYODIDE_VERSION}/`;
 const SQLJS_WASM = "https://cdn.jsdelivr.net/npm/sql.js@1.14.1/dist/";
@@ -423,12 +432,7 @@ async function runSql(code: string, question?: string, expectedOutput?: string):
   try {
     const initSqlJs = (await import("sql.js")).default;
     const SQL = await initSqlJs({
-      locateFile: (file: string) => {
-        if (typeof window === "undefined") {
-          return `node_modules/sql.js/dist/${file}`;
-        }
-        return `${SQLJS_WASM}${file}`;
-      },
+      locateFile: (file: string) => `${SQLJS_WASM}${file}`,
     });
     const db = new SQL.Database();
     try {
