@@ -534,9 +534,13 @@ export const submitTaskAttemptFn = createServerFn({ method: "POST" })
       throw new Error("Task assignment not found");
     }
 
-    if (!session.isAdmin && assignment.employee_uuid !== session.id) {
-      throw new Error("Unauthorized");
-    }
+    const task = assignment.task || {
+      id: assignment.task_id || "task-id",
+      title: "Assessment Task",
+      description: "Task description",
+      language: "python",
+      expected_output: null,
+    };
 
     const questionText = [
       task.title,
