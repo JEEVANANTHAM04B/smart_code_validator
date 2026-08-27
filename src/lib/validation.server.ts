@@ -232,15 +232,11 @@ function emptyInsights(summary: string): ValidationReport {
 }
 
 export async function runValidationEngine(input: ValidationInputPayload): Promise<ValidationReport> {
-  // 1. The real execution result (captured in the sandbox) decides the verdict on its own.
+  // 1. If execution result is not provided, run real sandbox execution (Pyodide or sql.js)
+  const { executeSubmission } = await import("./code-execution");
   const run: ExecutionResult =
-    input.execution ?? {
-      status: "error",
-      output: "",
-      error: "The code was not executed, so the output could not be captured.",
-      timeMs: 0,
-      note: "Execution result missing.",
-    };
+    input.execution ??
+    (await executeSubmission(input.language, input.code, input.question, input.expectedOutput));
 
 
   // 2. AI insights are informational only and must never block validation.

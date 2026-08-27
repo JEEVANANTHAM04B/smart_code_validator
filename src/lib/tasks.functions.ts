@@ -538,13 +538,17 @@ export const submitTaskAttemptFn = createServerFn({ method: "POST" })
       throw new Error("Unauthorized");
     }
 
-    const task = assignment.task;
+    const questionText = [
+      task.title,
+      task.description,
+      task.expected_output ? `Expected Output:\n${task.expected_output}` : ""
+    ].filter(Boolean).join("\n\n");
 
     // Run strict validation engine on current editor code
     const report = await runValidationEngine({
       code: data.code,
       language: task.language,
-      question: `${task.title}\n\n${task.description}`,
+      question: questionText,
       expectedOutput: task.expected_output || undefined,
       employeeName: session.name,
       employeeCode: session.employeeId,
