@@ -135,9 +135,131 @@ function isValidSqlSyntax(code: string): boolean {
   return true;
 }
 
+const DEFAULT_SEEDS: Record<string, { name: string; cols: { name: string; type: string; colIdx: number }[]; rows: (string | number | null)[][] }> = {
+  employees: {
+    name: "Employees",
+    cols: [
+      { name: "EmployeeID", type: "NUMERIC", colIdx: 0 },
+      { name: "EmployeeName", type: "TEXT", colIdx: 1 },
+      { name: "employee_name", type: "TEXT", colIdx: 1 },
+      { name: "DepartmentID", type: "NUMERIC", colIdx: 2 },
+      { name: "Salary", type: "NUMERIC", colIdx: 3 },
+    ],
+    rows: [
+      [101, "Alice", "Alice", 1, 75000],
+      [102, "Bob", "Bob", 2, 45000],
+      [103, "Charlie", "Charlie", 1, 60000],
+      [104, "David", "David", 3, 40000],
+      [105, "Emma", "Emma", 2, 55000],
+      [106, "Frank", "Frank", 1, 70000],
+      [107, "Grace", "Grace", 3, 65000],
+    ],
+  },
+  departments: {
+    name: "Departments",
+    cols: [
+      { name: "DepartmentID", type: "NUMERIC", colIdx: 0 },
+      { name: "DepartmentName", type: "TEXT", colIdx: 1 },
+      { name: "department_name", type: "TEXT", colIdx: 1 },
+    ],
+    rows: [
+      [1, "IT", "IT"],
+      [2, "HR", "HR"],
+      [3, "Finance", "Finance"],
+    ],
+  },
+  products: {
+    name: "Products",
+    cols: [
+      { name: "ProductID", type: "NUMERIC", colIdx: 0 },
+      { name: "ProductName", type: "TEXT", colIdx: 1 },
+      { name: "product_name", type: "TEXT", colIdx: 1 },
+      { name: "CategoryID", type: "NUMERIC", colIdx: 2 },
+      { name: "Price", type: "NUMERIC", colIdx: 3 },
+    ],
+    rows: [
+      [1, "Laptop", "Laptop", 1, 1200],
+      [2, "Phone", "Phone", 2, 800],
+      [3, "Tablet", "Tablet", 2, 500],
+      [4, "Monitor", "Monitor", 1, 300],
+      [5, "Keyboard", "Keyboard", 1, 100],
+    ],
+  },
+  categories: {
+    name: "Categories",
+    cols: [
+      { name: "CategoryID", type: "NUMERIC", colIdx: 0 },
+      { name: "CategoryName", type: "TEXT", colIdx: 1 },
+      { name: "category_name", type: "TEXT", colIdx: 1 },
+    ],
+    rows: [
+      [1, "Electronics", "Electronics"],
+      [2, "Accessories", "Accessories"],
+    ],
+  },
+  customers: {
+    name: "Customers",
+    cols: [
+      { name: "CustomerID", type: "NUMERIC", colIdx: 0 },
+      { name: "CustomerName", type: "TEXT", colIdx: 1 },
+      { name: "customer_name", type: "TEXT", colIdx: 1 },
+      { name: "City", type: "TEXT", colIdx: 2 },
+    ],
+    rows: [
+      [1, "John", "John", "New York"],
+      [2, "Sara", "Sara", "London"],
+      [3, "Mike", "Mike", "Paris"],
+      [4, "Lisa", "Lisa", "Tokyo"],
+    ],
+  },
+  orders: {
+    name: "Orders",
+    cols: [
+      { name: "OrderID", type: "NUMERIC", colIdx: 0 },
+      { name: "CustomerID", type: "NUMERIC", colIdx: 1 },
+      { name: "OrderAmount", type: "NUMERIC", colIdx: 2 },
+      { name: "order_amount", type: "NUMERIC", colIdx: 2 },
+    ],
+    rows: [
+      [501, 1, 250],
+      [502, 2, 450],
+      [503, 1, 150],
+      [504, 3, 600],
+    ],
+  },
+  students: {
+    name: "Students",
+    cols: [
+      { name: "StudentID", type: "NUMERIC", colIdx: 0 },
+      { name: "StudentName", type: "TEXT", colIdx: 1 },
+      { name: "student_name", type: "TEXT", colIdx: 1 },
+      { name: "CourseID", type: "NUMERIC", colIdx: 2 },
+    ],
+    rows: [
+      [1, "Alex", "Alex", 101],
+      [2, "Beth", "Beth", 102],
+      [3, "Carl", "Carl", 101],
+      [4, "Diana", "Diana", 103],
+    ],
+  },
+  courses: {
+    name: "Courses",
+    cols: [
+      { name: "CourseID", type: "NUMERIC", colIdx: 0 },
+      { name: "CourseName", type: "TEXT", colIdx: 1 },
+      { name: "course_name", type: "TEXT", colIdx: 1 },
+    ],
+    rows: [
+      [101, "Computer Science", "Computer Science"],
+      [102, "Mathematics", "Mathematics"],
+      [103, "Physics", "Physics"],
+    ],
+  },
+};
+
 function prepareDatabaseContext(db: any, question?: string, code?: string, expectedOutput: string = "") {
   const createdTables = new Set<string>();
-  const fullText = [question, expectedOutput].filter(Boolean).join("\n\n");
+  const fullText = [question, expectedOutput, code].filter(Boolean).join("\n\n");
   if (!fullText.trim()) return;
 
   // 1. Explicit SQL DDL/DML statements (CREATE TABLE ..., INSERT INTO ...)
@@ -332,6 +454,27 @@ function prepareDatabaseContext(db: any, question?: string, code?: string, expec
 
   if (currentTableLines.length > 0) {
     processTableGroup(currentTableLines, precedingContext);
+  }
+
+  // 3. Ensure referenced standard tables exist by seeding defaults if not explicitly created
+  for (const seedKey of Object.keys(DEFAULT_SEEDS)) {
+    const seed = DEFAULT_SEEDS[seedKey]!;
+    if (
+      !createdTables.has(seedKey) &&
+      new RegExp(`\\b${seedKey}\\b`, "i").test(fullText)
+    ) {
+      const createColsSql = seed.cols.map((c) => `"${c.name}" ${c.type}`).join(", ");
+      try {
+        db.exec(`CREATE TABLE IF NOT EXISTS "${seed.name}" (${createColsSql});`);
+        const placeholders = seed.cols.map(() => "?").join(", ");
+        for (const r of seed.rows) {
+          db.run(`INSERT INTO "${seed.name}" VALUES (${placeholders});`, r);
+        }
+        createdTables.add(seedKey);
+      } catch {
+        // Ignore fallback
+      }
+    }
   }
 }
 
