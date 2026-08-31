@@ -1,51 +1,24 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import {
-  Activity,
-  ArrowRight,
-  BadgeCheck,
-  CircleX,
-  Code2,
-  Gauge,
-  Users,
-} from "lucide-react";
-import {
-  Bar,
-  BarChart,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
-import { Skeleton } from "@/components/ui/skeleton";
-import { fetchSubmissions, type SubmissionRow } from "@/lib/submissions";
-import { DIFFICULTIES } from "@/lib/validation-types";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { getSessionFn } from "@/lib/auth.functions";
 
 export const Route = createFileRoute("/")({
-  head: () => ({
-    meta: [
-      { title: "Dashboard | Code Pilot" },
-      {
-        name: "description",
-        content:
-          "Track Python and SQL code submissions, acceptance rate, AI quality scores and difficulty distribution across your engineering team.",
-      },
-      { property: "og:title", content: "Dashboard | Code Pilot" },
-      {
-        property: "og:description",
-        content: "AI-powered validation metrics for Python and SQL code submissions.",
-      },
-    ],
-  }),
-  component: DashboardPage,
+  beforeLoad: async () => {
+    try {
+      const session = await getSessionFn();
+      if (!session) {
+        throw redirect({ to: "/employee/login" });
+      }
+      if (session.isAdmin) {
+        throw redirect({ to: "/admin" });
+      } else {
+        throw redirect({ to: "/employee" });
+      }
+    } catch (err: any) {
+      if (err?.to) throw err;
+      throw redirect({ to: "/employee/login" });
+    }
+  },
+  component: () => null,
 });
 
 function StatCard({

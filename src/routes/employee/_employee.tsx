@@ -134,15 +134,6 @@ function EmployeeLayout() {
         </Button>
         <Button variant="ghost" asChild className="gap-2">
           <Link
-            to="/employee/upload"
-            activeProps={{ className: "bg-accent text-accent-foreground" }}
-          >
-            <Upload className="h-4 w-4" />
-            Upload Task
-          </Link>
-        </Button>
-        <Button variant="ghost" asChild className="gap-2">
-          <Link
             to="/employee/history"
             activeProps={{ className: "bg-accent text-accent-foreground" }}
           >

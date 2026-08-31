@@ -77,15 +77,6 @@ function AdminLayout() {
         </Button>
         <Button variant="ghost" asChild className="gap-2">
           <Link
-            to="/admin/files"
-            activeProps={{ className: "bg-accent text-accent-foreground" }}
-          >
-            <FileText className="h-4 w-4" />
-            Files
-          </Link>
-        </Button>
-        <Button variant="ghost" asChild className="gap-2">
-          <Link
             to="/admin/submissions"
             activeProps={{ className: "bg-accent text-accent-foreground" }}
           >

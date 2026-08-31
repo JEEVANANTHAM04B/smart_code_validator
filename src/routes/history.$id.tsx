@@ -1,4 +1,5 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound, redirect } from "@tanstack/react-router";
+import { getSessionFn } from "@/lib/auth.functions";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, FileDown, CheckCircle2, XCircle, HelpCircle } from "lucide-react";
 import { useState } from "react";
@@ -21,6 +22,18 @@ import { fetchSubmission } from "@/lib/submissions";
 import { exportReportPdf, exportReportDocx } from "@/lib/export-report";
 
 export const Route = createFileRoute("/history/$id")({
+  beforeLoad: async () => {
+    try {
+      const session = await getSessionFn();
+      if (!session) {
+        throw redirect({ to: "/employee/login" });
+      }
+      return { session };
+    } catch (err: any) {
+      if (err?.to) throw err;
+      throw redirect({ to: "/employee/login" });
+    }
+  },
   head: () => ({
     meta: [
       { title: "Validation Report | Smart Code Validator" },

@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { LayoutDashboard, Code2, History, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, Code2, History, ShieldCheck, Users, FileText, Activity } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 
 import {
@@ -15,24 +15,32 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 
-const items = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard },
-  { title: "Code Validator", url: "/validator", icon: Code2 },
-  { title: "History", url: "/history", icon: History },
-] as const;
-
-
-const portalItems = [
-  { title: "Employee Portal", url: "/employee/login", icon: ShieldCheck },
-  { title: "Admin Portal", url: "/admin/login", icon: ShieldCheck },
-] as const;
-
-export function AppSidebar() {
+export function AppSidebar({ session }: { session?: any }) {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const pathname = useRouterState({ select: (router) => router.location.pathname });
 
   const isActive = (url: string) => (url === "/" ? pathname === "/" : pathname.startsWith(url));
+
+  const workspaceItems = session?.isAdmin
+    ? [
+        { title: "Admin Dashboard", url: "/admin", icon: LayoutDashboard },
+        { title: "Code Validator", url: "/validator", icon: Code2 },
+        { title: "Task Management", url: "/admin/tasks", icon: FileText },
+        { title: "Employees", url: "/admin/employees", icon: Users },
+        { title: "Submissions", url: "/admin/submissions", icon: Activity },
+        { title: "History", url: "/history", icon: History },
+      ]
+    : [
+        { title: "Employee Dashboard", url: "/employee", icon: LayoutDashboard },
+        { title: "Assigned Tasks", url: "/employee/tasks", icon: FileText },
+        { title: "Code Validator", url: "/validator", icon: Code2 },
+        { title: "My History", url: "/employee/history", icon: History },
+      ];
+
+  const portalItems = session?.isAdmin
+    ? [{ title: "Admin Portal", url: "/admin", icon: ShieldCheck }]
+    : [{ title: "Employee Portal", url: "/employee", icon: ShieldCheck }];
 
   return (
     <Sidebar collapsible="icon">
@@ -55,7 +63,7 @@ export function AppSidebar() {
           <SidebarGroupLabel>Workspace</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {items.map((item) => (
+              {workspaceItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title}>
                     <Link to={item.url} className="flex items-center gap-2">

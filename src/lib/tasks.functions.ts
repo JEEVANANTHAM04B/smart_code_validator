@@ -380,7 +380,15 @@ export const listEmployeeTasksFn = createServerFn({ method: "GET" }).handler(asy
     });
   }
 
-  return assignmentsData;
+  // Deduplicate by task.id to guarantee 1 created question displays as exactly 1 task card per assigned employee
+  const uniqueAssignmentsMap = new Map();
+  for (const item of assignmentsData) {
+    if (item?.task?.id && !uniqueAssignmentsMap.has(item.task.id)) {
+      uniqueAssignmentsMap.set(item.task.id, item);
+    }
+  }
+
+  return Array.from(uniqueAssignmentsMap.values());
 });
 
 export const getTaskAssignmentDetailsFn = createServerFn({ method: "POST" })

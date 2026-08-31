@@ -4,6 +4,7 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
@@ -15,6 +16,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeToggle, themeInitScript } from "@/components/theme-toggle";
+import { getSessionFn } from "@/lib/auth.functions";
 
 function NotFoundComponent() {
   return (
@@ -77,6 +79,14 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 }
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+  beforeLoad: async () => {
+    try {
+      const session = await getSessionFn();
+      return { session };
+    } catch {
+      return { session: null };
+    }
+  },
   head: () => ({
     meta: [
       { charSet: "utf-8" },
@@ -125,27 +135,45 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const context = Route.useRouteContext();
+  const session = (context as any)?.session;
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  const isLoginRoute = pathname === "/employee/login" || pathname === "/admin/login";
+
+  if (!session || isLoginRoute) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <div className="min-h-screen w-full bg-background">
+          <Outlet />
+        </div>
+        <Toaster richColors position="top-right" />
+      </QueryClientProvider>
+    );
+  }
 
   return (
     <QueryClientProvider client={queryClient}>
       <SidebarProvider>
         <div className="flex min-h-screen w-full bg-background">
-          <AppSidebar />
+          <AppSidebar session={session} />
           <div className="flex min-w-0 flex-1 flex-col">
             <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur">
               <SidebarTrigger />
               <div className="flex items-center gap-2">
                 <span className="text-base font-bold tracking-wide text-foreground">Code Pilot</span>
                 <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-primary/10 text-primary">
-                  Validation Console
+                  AI Validation Platform
                 </span>
               </div>
-              <div className="ml-auto">
+              <div className="ml-auto flex items-center gap-3">
+                <span className="text-xs text-muted-foreground hidden sm:inline">
+                  Logged in as <strong className="text-foreground">{session.name}</strong> ({session.isAdmin ? "Admin" : session.employeeId})
+                </span>
                 <ThemeToggle />
               </div>
             </header>
             <main className="flex-1 px-4 py-6 sm:px-8 sm:py-8">
-              {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
               <Outlet />
             </main>
           </div>

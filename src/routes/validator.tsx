@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { z } from "zod";
 import { useState, useEffect } from "react";
 import { useServerFn } from "@tanstack/react-start";
@@ -17,9 +17,13 @@ export const Route = createFileRoute("/validator")({
   beforeLoad: async () => {
     try {
       const session = await getSessionFn();
+      if (!session) {
+        throw redirect({ to: "/employee/login" });
+      }
       return { session };
-    } catch {
-      return { session: null };
+    } catch (err: any) {
+      if (err?.to) throw err;
+      throw redirect({ to: "/employee/login" });
     }
   },
   head: () => ({

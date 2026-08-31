@@ -352,7 +352,6 @@ export function ValidationReportView({
           <TabsTrigger value="issues">Issues ({report.issues.length})</TabsTrigger>
           <TabsTrigger value="complexity">Complexity & difficulty</TabsTrigger>
           <TabsTrigger value="solutions">AI solutions</TabsTrigger>
-          <TabsTrigger value="learning">Learning</TabsTrigger>
           {submittedCode && <TabsTrigger value="code">Submitted code</TabsTrigger>}
         </TabsList>
 
@@ -519,47 +518,6 @@ export function ValidationReportView({
               </CardContent>
             </Card>
           </div>
-        </TabsContent>
-
-        <TabsContent value="learning" className="mt-4 grid gap-6 lg:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <BookOpen className="size-4" /> Concepts & best practices
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Concepts used</p>
-                <BulletList items={report.learning.concepts} />
-              </div>
-              <div>
-                <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Best practices</p>
-                <BulletList items={report.learning.bestPractices} />
-              </div>
-              <div>
-                <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Common mistakes</p>
-                <BulletList items={report.learning.commonMistakes} />
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Interview preparation</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Tips</p>
-                <BulletList items={report.learning.interviewTips} />
-              </div>
-              <div>
-                <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
-                  Possible interview questions
-                </p>
-                <BulletList items={report.learning.interviewQuestions} />
-              </div>
-            </CardContent>
-          </Card>
         </TabsContent>
 
         {submittedCode && (

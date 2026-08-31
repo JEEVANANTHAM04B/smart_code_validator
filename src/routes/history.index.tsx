@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { getSessionFn } from "@/lib/auth.functions";
 import { useQuery } from "@tanstack/react-query";
 import { FileSpreadsheet, FileDown, Search } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -20,6 +21,18 @@ import { fetchSubmissions } from "@/lib/submissions";
 import { exportHistoryCsv, exportHistoryExcel } from "@/lib/export-history";
 
 export const Route = createFileRoute("/history/")({
+  beforeLoad: async () => {
+    try {
+      const session = await getSessionFn();
+      if (!session) {
+        throw redirect({ to: "/employee/login" });
+      }
+      return { session };
+    } catch (err: any) {
+      if (err?.to) throw err;
+      throw redirect({ to: "/employee/login" });
+    }
+  },
   head: () => ({
     meta: [
       { title: "Submission History | Smart Code Validator" },
